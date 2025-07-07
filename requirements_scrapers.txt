@@ -1,0 +1,21 @@
+pandas
+numpy
+pysbd
+tqdm
+spacy
+transformers
+plotly==5.24.1
+sentence-transformers
+matplotlib
+jsonlines
+dateparser
+
+# For crawlers in scrapy
+scrapy
+
+# For scrapy-scrapers using playwright
+playwright
+
+# For scrapers using pytube
+pytube
+pytubefix

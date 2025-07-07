@@ -1,0 +1,4 @@
+sudo apt update
+sudo apt install rename
+rename -n 's/\.(?=.*\.m4a)//g' *.m4a
+rename 's/_large-v3_.+(?=\.json)//' *.json
