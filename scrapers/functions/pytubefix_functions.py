@@ -47,7 +47,7 @@ class Pytubefix_Functions:
         return output_path
 
     @staticmethod
-    def pytubefix_from_channel_jsonlines(url: str, output_path, source='', from_date=None, to_date=None, flush_every=100):
+    def pytubefix_from_channel_jsonlines(url: str, output_path, source='', from_date=None, to_date=None, flush_every=100, videos = True, shorts = False, live = False):
         '''Same functionality but writes to file every `flush_every` videos.'''
         from pytubefix import Channel  # Redundant if already globally imported
 
@@ -67,7 +67,18 @@ class Pytubefix_Functions:
                 for line in f:
                     existing_videos.add(json.loads(line)['video_link'])
 
-        videos_to_scrape = [video for video in channel.videos if video.watch_url not in existing_videos]
+        videos_to_scrape = []
+        if videos:
+            videos_add = [video for video in channel.videos if video.watch_url not in existing_videos]
+            videos_to_scrape = videos_to_scrape + videos_add
+
+        if shorts:
+            videos_add = [short for short in channel.shorts if short.watch_url not in existing_videos]
+            videos_to_scrape = videos_to_scrape + videos_add
+        
+        if live:
+            videos_add = [live for live in channel.live if live.watch_url not in existing_videos]
+            videos_to_scrape = videos_to_scrape + videos_add
         video_count = len(videos_to_scrape)
         print(f"Starting to scrape {video_count} new videos...")
 
@@ -149,7 +160,17 @@ class Pytubefix_Functions:
                     except Exception as e:
                         print(f"Skipping malformed failure entry: {item} — {e}")
 
-        for idx, video in enumerate(channel.videos, start=1):
+        videos_to_scrape = []
+        if videos:
+            videos_to_scrape = videos_to_scrape + channel.videos
+
+        if shorts:
+            videos_to_scrape = videos_to_scrape + channel.shorts
+        
+        if live:
+            videos_to_scrape = videos_to_scrape + channel.live
+
+        for idx, video in enumerate(videos_to_scrape, start=1):
 
             if video.publish_date: # check if publish date is available (returns None otherwise)
                 pub_date = video.publish_date.date()
@@ -199,14 +220,14 @@ class Pytubefix_Functions:
         print(f"Finished downloading audio. {downloaded_count} succeeded. Failures logged to {failed_path}")
 
     @staticmethod
-    def pytubefix_from_channel(url:str, file, nesting_level = 4, source = '', output_path=None, from_date=None, to_date=None):
+    def pytubefix_from_channel(url:str, file, nesting_level = 4, source = '', output_path=None, from_date=None, to_date=None, videos = True, shorts = False, live = False):
         ''' Takes a URL, a file (should always be __file__). Generates an output path for the data, a jsonlines file containing scraped data and a folder with all audio files. '''
         if not output_path:
             generated_output_path = Pytubefix_Functions.generate_output_path(file, nesting_level)
         else:
             generated_output_path = Path(output_path)
-        Pytubefix_Functions.pytubefix_from_channel_jsonlines(url, generated_output_path, source, from_date=from_date, to_date=to_date)
-        Pytubefix_Functions.pytubefix_from_channel_audio(url, generated_output_path, from_date=from_date, to_date=to_date)
+        Pytubefix_Functions.pytubefix_from_channel_jsonlines(url, generated_output_path, source, from_date=from_date, to_date=to_date, videos = videos, shorts = shorts, live = live)
+        Pytubefix_Functions.pytubefix_from_channel_audio(url, generated_output_path, from_date=from_date, to_date=to_date, videos = videos, shorts = shorts, live = live)
         print(f'The YouTube channel {url} has been fully scraped! \nThe scraped data can be found at {generated_output_path}.')
         return generated_output_path
     
