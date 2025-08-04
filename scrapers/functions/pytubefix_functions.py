@@ -144,7 +144,6 @@ class Pytubefix_Functions:
         m4a_folder_path.mkdir(parents=True, exist_ok=True)
         failed_path = output_path / 'not_downloaded.jl'
 
-        video_count = len(channel.videos)
         downloaded_count = 0
 
         # Track video_ids we've already logged as failed to avoid duplication
@@ -162,13 +161,18 @@ class Pytubefix_Functions:
 
         videos_to_scrape = []
         if videos:
-            videos_to_scrape = videos_to_scrape + channel.videos
+            videos_add = [video for video in channel.videos]
+            videos_to_scrape = videos_to_scrape + videos_add
 
         if shorts:
-            videos_to_scrape = videos_to_scrape + channel.shorts
+            videos_add = [short for short in channel.shorts]
+            videos_to_scrape = videos_to_scrape + videos_add
         
         if live:
-            videos_to_scrape = videos_to_scrape + channel.live
+            videos_add = [live for live in channel.live]
+            videos_to_scrape = videos_to_scrape + videos_add
+
+        video_count = len(videos_to_scrape)
 
         for idx, video in enumerate(videos_to_scrape, start=1):
 
