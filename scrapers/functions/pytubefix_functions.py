@@ -134,7 +134,7 @@ class Pytubefix_Functions:
 
 
     @staticmethod
-    def pytubefix_from_channel_audio(url: str, output_path, from_date=None, to_date=None):
+    def pytubefix_from_channel_audio(url: str, output_path, from_date=None, to_date=None, videos = True, shorts = False, live = False):
         from pytubefix import Channel  # ensure imported at top if not global
 
         channel = Channel(url, use_oauth=True, allow_oauth_cache=True)
