@@ -75,19 +75,27 @@ class Pytubefix_Functions:
 
         for idx, video in enumerate(videos_to_scrape, start=1):
             try:
-                pub_date = video.publish_date.date()
-                if from_date and pub_date < from_date:
-                    print(f"[{idx}/{video_count}] Encountered video older than from_date, stopping further scraping.")
-                    break
-                if to_date and pub_date > to_date:
-                    print(f"[{idx}/{video_count}] Skipping: {video.title} — newer than to_date")
-                    continue
+                if video.publish_date: # check if publish date is available (returns None otherwise)
+                    pub_date = video.publish_date.date()
+                    if from_date and pub_date < from_date:
+                        print(f"[{idx}/{video_count}] Encountered video older than from_date, stopping further scraping.")
+                        break
+                    if to_date and pub_date > to_date:
+                        print(f"[{idx}/{video_count}] Skipping: {video.title} — newer than to_date")
+                        continue
+
+                    pub_date_write = video.publish_date.isoformat() # date to write to data
+
+                else: # set missing date value ("") if date not available
+                    print(f"[{idx}/{video_count}] Not possible to retrieve publish date from {video.title} — set as missing/empty string")
+                    pub_date_write = ""
+
 
                 video_data = {
                     'scrape_date': timestamp,
                     'video_title': video.title,
                     'source': source,
-                    'publication_date': video.publish_date.isoformat(),
+                    'publication_date': pub_date_write,
                     'video_link': video.watch_url,
                     'video_id': video.video_id,
                 }
@@ -142,14 +150,19 @@ class Pytubefix_Functions:
                         print(f"Skipping malformed failure entry: {item} — {e}")
 
         for idx, video in enumerate(channel.videos, start=1):
-            pub_date = video.publish_date#.date()
-            print(f"[{idx}/{pubdate}]")
-            if from_date and pub_date < from_date:
-                print(f"[{idx}/{video_count}] Encountered video older than from_date, stopping further downloads.")
-                break
-            if to_date and pub_date > to_date:
-                print(f"[{idx}/{video_count}] Skipping audio: {video.title} — newer than to_date")
-                continue
+
+            if video.publish_date: # check if publish date is available (returns None otherwise)
+                pub_date = video.publish_date.date()
+                if from_date and pub_date < from_date:
+                    print(f"[{idx}/{video_count}] Encountered video older than from_date, stopping further scraping.")
+                    break
+                if to_date and pub_date > to_date:
+                    print(f"[{idx}/{video_count}] Skipping: {video.title} — newer than to_date")
+                    continue
+
+            else: 
+                print(f"[{idx}/{video_count}] Not possible to retrieve publish date from {video.title} — downloading audio regardless of date filter")
+                
 
             video_title = video.title
             video_id = video.video_id
@@ -351,19 +364,26 @@ class Pytubefix_Functions:
 
         for idx, video in enumerate(videos_to_scrape, start=1):
             try:
-                pub_date = video.publish_date.date()
-                if from_date and pub_date < from_date:
-                    print(f"[{idx}/{video_count}] Encountered video older than from_date, stopping further scraping.")
-                    break
-                if to_date and pub_date > to_date:
-                    print(f"[{idx}/{video_count}] Skipping: {video.title} — newer than to_date")
-                    continue
+                if video.publish_date: # check if publish date is available (returns None otherwise)
+                    pub_date = video.publish_date.date()
+                    if from_date and pub_date < from_date:
+                        print(f"[{idx}/{video_count}] Encountered video older than from_date, stopping further scraping.")
+                        break
+                    if to_date and pub_date > to_date:
+                        print(f"[{idx}/{video_count}] Skipping: {video.title} — newer than to_date")
+                        continue
+
+                    pub_date_write = video.publish_date.isoformat() # date to write to data
+
+                else: # set missing date value ("") if date not available
+                    print(f"[{idx}/{video_count}] Not possible to retrieve publish date from {video.title} — set as missing/empty string")
+                    pub_date_write = ""
 
                 video_data = {
                     'scrape_date': timestamp,
                     'video_title': video.title,
                     'source': source,
-                    'publication_date': video.publish_date.isoformat(),
+                    'publication_date': pub_date_write,
                     'video_link': video.watch_url,
                     'video_id': video.video_id,
                 }
@@ -417,14 +437,18 @@ class Pytubefix_Functions:
                         print(f"Skipping malformed failure entry: {item} — {e}")
 
         for idx, video in enumerate(playlist.videos, start=1):
-            pub_date = video.publish_date.date()
-            if from_date and pub_date < from_date:
-                print(f"[{idx}/{video_count}] Encountered video older than from_date, stopping further downloads.")
-                break
-            if to_date and pub_date > to_date:
-                print(f"[{idx}/{video_count}] Skipping audio: {video.title} — newer than to_date")
-                continue
-
+            if video.publish_date: # check if publish date is available (returns None otherwise)
+                pub_date = video.publish_date.date()
+                if from_date and pub_date < from_date:
+                    print(f"[{idx}/{video_count}] Encountered video older than from_date, stopping further scraping.")
+                    break
+                if to_date and pub_date > to_date:
+                    print(f"[{idx}/{video_count}] Skipping: {video.title} — newer than to_date")
+                    continue
+            
+            else: 
+                print(f"[{idx}/{video_count}] Not possible to retrieve publish date from {video.title} — downloading audio regardless of date filter")
+           
             video_title = video.title
             video_id = video.video_id
             file_name = f"{video_id}.m4a"
