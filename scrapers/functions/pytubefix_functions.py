@@ -1,4 +1,5 @@
 from pytubefix import Channel
+from pytubefix import Playlist
 from pathlib import Path
 from datetime import datetime, date
 from collections import OrderedDict
@@ -141,7 +142,8 @@ class Pytubefix_Functions:
                         print(f"Skipping malformed failure entry: {item} — {e}")
 
         for idx, video in enumerate(channel.videos, start=1):
-            pub_date = video.publish_date.date()
+            pub_date = video.publish_date#.date()
+            print(f"[{idx}/{pubdate}]")
             if from_date and pub_date < from_date:
                 print(f"[{idx}/{video_count}] Encountered video older than from_date, stopping further downloads.")
                 break
@@ -194,6 +196,7 @@ class Pytubefix_Functions:
         Pytubefix_Functions.pytubefix_from_channel_audio(url, generated_output_path, from_date=from_date, to_date=to_date)
         print(f'The YouTube channel {url} has been fully scraped! \nThe scraped data can be found at {generated_output_path}.')
         return generated_output_path
+    
 
     @staticmethod
     def retry_failed_downloads(output_path, max_attempts=3, sleep_seconds=1):
@@ -319,3 +322,151 @@ class Pytubefix_Functions:
 
         else:
             print("⚠️ Reached max retries, some audio files may still be missing.")
+    
+    @staticmethod
+    def pytubefix_from_playlist_jsonlines(url: str, output_path, source='', from_date=None, to_date=None, flush_every=100):
+        '''Same functionality but writes to file every `flush_every` videos.'''
+
+        # Setup
+        playlist = Playlist(url, use_oauth=True, allow_oauth_cache=True)
+        output_path.mkdir(parents=True, exist_ok=True)
+        jsonlines_path = output_path / 'videos.jl'
+
+        if not source:
+            source = Pytubefix_Functions.extract_source(url)
+
+        timestamp = datetime.now().strftime('%Y-%m-%d')
+        existing_videos = set()
+
+        if jsonlines_path.exists():
+            with jsonlines_path.open('r', encoding='utf-8') as f:
+                for line in f:
+                    existing_videos.add(json.loads(line)['video_link'])
+
+        videos_to_scrape = [video for video in playlist.videos if video.watch_url not in existing_videos]
+        video_count = len(videos_to_scrape)
+        print(f"Starting to scrape {video_count} new videos...")
+
+        buffer = []  # Temporarily store video data
+
+        for idx, video in enumerate(videos_to_scrape, start=1):
+            try:
+                pub_date = video.publish_date.date()
+                if from_date and pub_date < from_date:
+                    print(f"[{idx}/{video_count}] Encountered video older than from_date, stopping further scraping.")
+                    break
+                if to_date and pub_date > to_date:
+                    print(f"[{idx}/{video_count}] Skipping: {video.title} — newer than to_date")
+                    continue
+
+                video_data = {
+                    'scrape_date': timestamp,
+                    'video_title': video.title,
+                    'source': source,
+                    'publication_date': video.publish_date.isoformat(),
+                    'video_link': video.watch_url,
+                    'video_id': video.video_id,
+                }
+
+                buffer.append(video_data)
+                print(f"[{idx}/{video_count}] Scraped: {video.title}")
+
+                # Write to file every `flush_every` videos
+                if len(buffer) >= flush_every:
+                    with jsonlines.open(jsonlines_path, mode='a') as writer:
+                        writer.write_all(buffer)
+                    print(f"💾 Flushed {len(buffer)} videos to disk.")
+                    buffer.clear()
+
+            except Exception as e:
+                print(f"[{idx}/{video_count}] Failed to process '{video.title}'. Error: {e}")
+
+        # Write any remaining videos
+        if buffer:
+            with jsonlines.open(jsonlines_path, mode='a') as writer:
+                writer.write_all(buffer)
+            print(f"💾 Flushed final {len(buffer)} videos to disk.")
+
+        print(f"✅ Finished! Scraped {video_count} new videos.")
+
+
+    @staticmethod
+    def pytubefix_from_playlist_audio(url: str, output_path, from_date=None, to_date=None):
+
+        playlist = Playlist(url, use_oauth=True, allow_oauth_cache=True)
+        output_path = Path(output_path)
+        output_path.mkdir(parents=True, exist_ok=True)
+        m4a_folder_path = output_path / 'm4a_files'
+        m4a_folder_path.mkdir(parents=True, exist_ok=True)
+        failed_path = output_path / 'not_downloaded.jl'
+
+        video_count = len(playlist.videos)
+        downloaded_count = 0
+
+        # Track video_ids we've already logged as failed to avoid duplication
+        logged_failures = set()
+
+        # Load previously failed attempts into memory
+        if failed_path.exists():
+            with jsonlines.open(failed_path, mode='r') as reader:
+                for item in reader:
+                    try:
+                        title, video_id, _ = item["error"]
+                        logged_failures.add(video_id)
+                    except Exception as e:
+                        print(f"Skipping malformed failure entry: {item} — {e}")
+
+        for idx, video in enumerate(playlist.videos, start=1):
+            pub_date = video.publish_date.date()
+            if from_date and pub_date < from_date:
+                print(f"[{idx}/{video_count}] Encountered video older than from_date, stopping further downloads.")
+                break
+            if to_date and pub_date > to_date:
+                print(f"[{idx}/{video_count}] Skipping audio: {video.title} — newer than to_date")
+                continue
+
+            video_title = video.title
+            video_id = video.video_id
+            file_name = f"{video_id}.m4a"
+            file_path = m4a_folder_path / file_name
+
+            if file_path.exists():
+                print(f"[{idx}/{video_count}] Already downloaded, skipping: {video_title}")
+                continue
+
+            try:
+                audio_stream = video.streams.filter(only_audio=True).first()
+                if audio_stream is None:
+                    raise ValueError("No audio stream available.")
+
+                audio_stream.download(output_path=m4a_folder_path, filename=file_name)
+                downloaded_count += 1
+                print(f"[{idx}/{video_count}] Downloaded audio: {video_title}")
+
+            except Exception as e:
+                print(f"[{idx}/{video_count}] Failed to download '{video_title}': {e}")
+
+                if video_id not in logged_failures:
+                    failure_record = {
+                        "error": [video_title, video_id, str(e)],
+                        "retries": 0
+                    }
+                    logged_failures.add(video_id)
+
+                    # Immediately append to not_downloaded.jl
+                    with jsonlines.open(failed_path, mode='a') as writer:
+                        writer.write(failure_record)
+
+        print(f"Finished downloading audio. {downloaded_count} succeeded. Failures logged to {failed_path}")
+
+    @staticmethod
+    def pytubefix_from_playlist(url:str, file, nesting_level = 4, source = '', output_path=None, from_date=None, to_date=None):
+        ''' Takes a URL, a file (should always be __file__). Generates an output path for the data, a jsonlines file containing scraped data and a folder with all audio files. '''
+        if not output_path:
+            generated_output_path = Pytubefix_Functions.generate_output_path(file, nesting_level)
+        else:
+            generated_output_path = Path(output_path)
+        Pytubefix_Functions.pytubefix_from_playlist_jsonlines(url, generated_output_path, source, from_date=from_date, to_date=to_date)
+        Pytubefix_Functions.pytubefix_from_playlist_audio(url, generated_output_path, from_date=from_date, to_date=to_date)
+        print(f'The YouTube channel {url} has been fully scraped! \nThe scraped data can be found at {generated_output_path}.')
+        return generated_output_path
