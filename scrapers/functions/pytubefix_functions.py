@@ -1,5 +1,6 @@
 from pytubefix import Channel
 from pytubefix import Playlist
+from pytubefix import YouTube
 from pathlib import Path
 from datetime import datetime, date
 from collections import OrderedDict
@@ -8,6 +9,7 @@ import json
 import jsonlines
 import time
 import re
+import os
 
 class Pytubefix_Functions:
     @staticmethod
@@ -134,7 +136,7 @@ class Pytubefix_Functions:
 
 
     @staticmethod
-    def pytubefix_from_channel_audio(url: str, output_path, from_date=None, to_date=None, videos = True, shorts = False, live = False):
+    def pytubefix_from_channel_audio(url: str, output_path, from_date=None, to_date=None, videos = True, shorts = False, live = False, check_for_downloaded = False):
         from pytubefix import Channel  # ensure imported at top if not global
 
         channel = Channel(url, use_oauth=True, allow_oauth_cache=True)
@@ -145,6 +147,12 @@ class Pytubefix_Functions:
         failed_path = output_path / 'not_downloaded.jl'
 
         downloaded_count = 0
+
+        # Check already downloaded files
+        if check_for_downloaded:
+            downloaded_files_ids = [file.removesuffix('.m4a') for file in os.listdir(m4a_folder_path) if file.endswith('.m4a')]
+        else:
+            downloaded_files_ids = []
 
         # Track video_ids we've already logged as failed to avoid duplication
         logged_failures = set()
@@ -161,18 +169,20 @@ class Pytubefix_Functions:
 
         videos_to_scrape = []
         if videos:
-            videos_add = [video for video in channel.videos]
+            videos_add = [video for video in channel.videos if video.video_id not in downloaded_files_ids]
             videos_to_scrape = videos_to_scrape + videos_add
 
         if shorts:
-            videos_add = [short for short in channel.shorts]
+            videos_add = [short for short in channel.shorts if short.video_id not in downloaded_files_ids]
             videos_to_scrape = videos_to_scrape + videos_add
         
         if live:
-            videos_add = [live for live in channel.live]
+            videos_add = [live for live in channel.live if live.video_id not in downloaded_files_ids]
             videos_to_scrape = videos_to_scrape + videos_add
 
         video_count = len(videos_to_scrape)
+
+        print(f"Downloading audio for {video_count} new videos...")
 
         for idx, video in enumerate(videos_to_scrape, start=1):
 
@@ -224,14 +234,14 @@ class Pytubefix_Functions:
         print(f"Finished downloading audio. {downloaded_count} succeeded. Failures logged to {failed_path}")
 
     @staticmethod
-    def pytubefix_from_channel(url:str, file, nesting_level = 4, source = '', output_path=None, from_date=None, to_date=None, videos = True, shorts = False, live = False):
+    def pytubefix_from_channel(url:str, file, nesting_level = 4, source = '', output_path=None, from_date=None, to_date=None, videos=True, shorts=False, live=False, check_for_downloaded=False):
         ''' Takes a URL, a file (should always be __file__). Generates an output path for the data, a jsonlines file containing scraped data and a folder with all audio files. '''
         if not output_path:
             generated_output_path = Pytubefix_Functions.generate_output_path(file, nesting_level)
         else:
             generated_output_path = Path(output_path)
-        Pytubefix_Functions.pytubefix_from_channel_jsonlines(url, generated_output_path, source, from_date=from_date, to_date=to_date, videos = videos, shorts = shorts, live = live)
-        Pytubefix_Functions.pytubefix_from_channel_audio(url, generated_output_path, from_date=from_date, to_date=to_date, videos = videos, shorts = shorts, live = live)
+        Pytubefix_Functions.pytubefix_from_channel_jsonlines(url, generated_output_path, source, from_date=from_date, to_date=to_date, videos=videos, shorts=shorts, live=live)
+        Pytubefix_Functions.pytubefix_from_channel_audio(url, generated_output_path, from_date=from_date, to_date=to_date, videos=videos, shorts=shorts, live=live, check_for_downloaded=check_for_downloaded)
         print(f'The YouTube channel {url} has been fully scraped! \nThe scraped data can be found at {generated_output_path}.')
         return generated_output_path
     
@@ -436,7 +446,7 @@ class Pytubefix_Functions:
 
 
     @staticmethod
-    def pytubefix_from_playlist_audio(url: str, output_path, from_date=None, to_date=None):
+    def pytubefix_from_playlist_audio(url: str, output_path, from_date=None, to_date=None, check_for_downloaded=False):
 
         playlist = Playlist(url, use_oauth=True, allow_oauth_cache=True)
         output_path = Path(output_path)
@@ -447,6 +457,12 @@ class Pytubefix_Functions:
 
         video_count = len(playlist.videos)
         downloaded_count = 0
+
+        # Check already downloaded files
+        if check_for_downloaded:
+            downloaded_files_ids = [file.removesuffix('.m4a') for file in os.listdir(m4a_folder_path) if file.endswith('.m4a')]
+        else:
+            downloaded_files_ids = []
 
         # Track video_ids we've already logged as failed to avoid duplication
         logged_failures = set()
@@ -461,7 +477,14 @@ class Pytubefix_Functions:
                     except Exception as e:
                         print(f"Skipping malformed failure entry: {item} — {e}")
 
-        for idx, video in enumerate(playlist.videos, start=1):
+        # Video list
+        videos_to_scrape = [video for video in playlist.videos if video.video_id not in downloaded_files_ids]
+
+        video_count = len(videos_to_scrape)
+
+        print(f"Downloading audio for {video_count} new videos...")
+
+        for idx, video in enumerate(videos_to_scrape, start=1):
             if video.publish_date: # check if publish date is available (returns None otherwise)
                 pub_date = video.publish_date.date()
                 if from_date and pub_date < from_date:
@@ -509,13 +532,128 @@ class Pytubefix_Functions:
         print(f"Finished downloading audio. {downloaded_count} succeeded. Failures logged to {failed_path}")
 
     @staticmethod
-    def pytubefix_from_playlist(url:str, file, nesting_level = 4, source = '', output_path=None, from_date=None, to_date=None):
+    def pytubefix_from_playlist(url:str, file, nesting_level = 4, source = '', output_path=None, from_date=None, to_date=None, check_for_downloaded=False):
         ''' Takes a URL, a file (should always be __file__). Generates an output path for the data, a jsonlines file containing scraped data and a folder with all audio files. '''
         if not output_path:
             generated_output_path = Pytubefix_Functions.generate_output_path(file, nesting_level)
         else:
             generated_output_path = Path(output_path)
         Pytubefix_Functions.pytubefix_from_playlist_jsonlines(url, generated_output_path, source, from_date=from_date, to_date=to_date)
-        Pytubefix_Functions.pytubefix_from_playlist_audio(url, generated_output_path, from_date=from_date, to_date=to_date)
+        Pytubefix_Functions.pytubefix_from_playlist_audio(url, generated_output_path, from_date=from_date, to_date=to_date, check_for_downloaded=check_for_downloaded)
         print(f'The YouTube channel {url} has been fully scraped! \nThe scraped data can be found at {generated_output_path}.')
         return generated_output_path
+
+    @staticmethod
+    def pytubefix_from_single(url:str, file, nesting_level = 4, source = '', output_path=None, from_date=None, to_date=None):
+        ''' Takes a URL, a file (should always be __file__). Generates an output path for the data, a jsonlines file containing scraped data and a folder with all audio files. '''
+        if not output_path:
+            generated_output_path = Pytubefix_Functions.generate_output_path(file, nesting_level)
+        else:
+            generated_output_path = Path(output_path)
+
+        video = YouTube(url, use_oauth=True, allow_oauth_cache=True)
+        generated_output_path.mkdir(parents=True, exist_ok=True)
+        jsonlines_path = generated_output_path / 'videos.jl'
+
+        if not source:
+            source = Pytubefix_Functions.extract_source(url)
+
+        timestamp = datetime.now().strftime('%Y-%m-%d')
+        existing_videos = set()
+
+        if jsonlines_path.exists():
+            with jsonlines_path.open('r', encoding='utf-8') as f:
+                for line in f:
+                    existing_videos.add(json.loads(line)['video_link'])
+
+        if video.watch_url in existing_videos:
+            print(f"Already downloaded, skipping: {video.watch_url}")
+            return
+
+        print(f"Starting to scrape video...")
+
+        try:
+            if video.publish_date: # check if publish date is available (returns None otherwise)
+                pub_date = video.publish_date.date()
+                if from_date and pub_date < from_date:
+                    print(f"Encountered video older than from_date, stopping further scraping.")
+                    return
+                if to_date and pub_date > to_date:
+                    print(f"Skipping: {video.title} — newer than to_date")
+                    return
+
+                pub_date_write = video.publish_date.isoformat() # date to write to data
+
+            else: # set missing date value ("") if date not available
+                print(f"Not possible to retrieve publish date from {video.title} — set as missing/empty string")
+                pub_date_write = ""
+
+            video_data = {
+                'scrape_date': timestamp,
+                'video_title': video.title,
+                'source': source,
+                'publication_date': pub_date_write,
+                'video_link': video.watch_url,
+                'video_id': video.video_id,
+            }
+
+            print(f"Scraped: {video.title}")
+
+        except Exception as e:
+            print(f"Failed to process '{video.title}'. Error: {e}")
+
+        # Write metadata to file
+        video_data_list = [video_data]
+
+        with jsonlines.open(jsonlines_path, mode='a') as writer:
+            writer.write_all(video_data_list)
+        print(f"💾 Video data written to disk.")
+
+        # Download audio
+        m4a_folder_path = generated_output_path / 'm4a_files'
+        m4a_folder_path.mkdir(parents=True, exist_ok=True)
+        failed_path = generated_output_path / 'not_downloaded.jl'
+
+        # Track video_ids we've already logged as failed to avoid duplication
+        logged_failures = set()
+
+        # Load previously failed attempts into memory
+        if failed_path.exists():
+            with jsonlines.open(failed_path, mode='r') as reader:
+                for item in reader:
+                    try:
+                        title, video_id, _ = item["error"]
+                        logged_failures.add(video_id)
+                    except Exception as e:
+                        print(f"Skipping malformed failure entry: {item} — {e}")
+
+        video_title = video.title
+        video_id = video.video_id
+        file_name = f"{video_id}.m4a"
+        file_path = m4a_folder_path / file_name
+
+        if file_path.exists():
+            print(f"Already downloaded, skipping: {video_title}")
+            return
+
+        try:
+            audio_stream = video.streams.filter(only_audio=True).first()
+            if audio_stream is None:
+                raise ValueError("No audio stream available.")
+
+            audio_stream.download(output_path=m4a_folder_path, filename=file_name)
+            print(f"✅ Finished! Downloaded audio: {video_title}")
+
+        except Exception as e:
+            print(f"Failed to download '{video_title}': {e}")
+
+            if video_id not in logged_failures:
+                failure_record = {
+                    "error": [video_title, video_id, str(e)],
+                    "retries": 0
+                }
+                logged_failures.add(video_id)
+
+                # Immediately append to not_downloaded.jl
+                with jsonlines.open(failed_path, mode='a') as writer:
+                    writer.write(failure_record)
