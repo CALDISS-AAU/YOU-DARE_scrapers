@@ -35,13 +35,17 @@ class Transcriber_data_Functions:
         all_texts = []
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
-                for line in f:
-                    data = json.loads(line)
+                data = json.load(f) # json either as list [ or dict {
+
+                if isinstance(data, list): # assumes that segments are in list or one-level dictionary with top key 'segments'
+                    segments = data
+                else:
                     segments = data.get('segments', [])
-                    for segment in segments:
-                        text = segment.get('text')
-                        if text:
-                            all_texts.append(text)
+                    
+                for segment in segments:
+                    text = segment.get('text')
+                    if text:
+                        all_texts.append(text)
         except Exception as e:
             print(f'Failed to load data from {file_path}. Error: {e}')
             return []
