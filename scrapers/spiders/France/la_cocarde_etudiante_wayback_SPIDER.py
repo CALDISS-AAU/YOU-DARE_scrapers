@@ -48,6 +48,7 @@ from ...functions.general_functions import General_Functions # importing cleanin
 class WaybackcocardeSpider(scrapy.Spider):
     name = 'la_cocarde_etudiante_wayback_SPIDER'
     region = 'France'
+    source = 'La Cocarde Etudiante'
 
     urls = [
         'https://cocardeetudiante.com/articles/',
@@ -68,7 +69,7 @@ class WaybackcocardeSpider(scrapy.Spider):
     publication_date_CSS = '.elementor-post-date::text'
     title_CSS = 'h1.elementor-heading-title.elementor-size-default::text'
     article_text_bits_CSS = '.elementor-widget-container p ::text'
-    article_HTML_bits_CSS = '.elementor-widget-container p'
+    # article_HTML_bits_CSS = '.elementor-widget-container p'
     image_links_CSS = '.attachment-large.size-large.wp-image-7186.lazyloading img::attr(src)'
     author_text_CSS = 'p.has-text-align-right *::text'
     themes_CSS = '.elementor-post-info__terms-list a.elementor-post-info__terms-list-item::text'
@@ -151,8 +152,9 @@ class WaybackcocardeSpider(scrapy.Spider):
         article_title = response.css(self.title_CSS).get()
         article_text_bits = response.css(self.article_text_bits_CSS).getall()
         article_text = ' '.join(article_text_bits).strip()
-        article_HTML_bits = response.css(self.article_HTML_bits_CSS).getall()
-        article_HTML = ' '.join(article_HTML_bits).strip()
+        article_HTML = response.text
+        # article_HTML_bits = response.css(self.article_HTML_bits_CSS).getall()
+        # article_HTML = ' '.join(article_HTML_bits).strip()
         themes_text = response.css(self.themes_CSS).getall()
         author = response.css(self.author_text_CSS).getall()
 
@@ -172,6 +174,8 @@ class WaybackcocardeSpider(scrapy.Spider):
         items['scrape_date'] = timestamp
         items['article_link'] = article_link
         items['article_title'] = article_title
+        items['article_HTML'] = article_HTML
+        items['source'] = self.source
         items['publication_date'] = publication_date
         items['article_text'] = article_text
         items['image_links'] = response.css(self.image_links_CSS).getall()
