@@ -5,5 +5,4 @@ pip3 install telepathy
 pip3 install cryptg
 
 # things to get
-telepathy -t papacitofdp -c -r
-telepathy -t RNJ_officiel -c -r
+telepathy --target GymXIV2 --comprehensive --replies
