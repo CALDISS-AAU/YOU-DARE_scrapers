@@ -99,7 +99,7 @@ class DynamicSpider(scrapy.Spider): # Can be changed but it's not necessary - if
         
         returnValue(collected_items) # MUST!!! be 'returnValue' since scrapy can't catch data from '@inlineCallbacks' using 'yield'!!!
 
-    def parse_article(self, response): # Can be renamed. IF IT IS REMEBER TO REDIRECT THE CALLBACK IN PARSE!
+    def parse_article(self, response, article_link): # Can be renamed. IF IT IS REMEBER TO REDIRECT THE CALLBACK IN PARSE!
         items = ScrapersItem() # Makes the items from items.py accessable within this function
         # Extract 'scrape_date'
         timestamp = datetime.now().strftime('%Y-%m-%d')

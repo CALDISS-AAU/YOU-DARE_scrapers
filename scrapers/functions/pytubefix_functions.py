@@ -4,6 +4,8 @@ from pytubefix import YouTube
 from pathlib import Path
 from datetime import datetime, date
 from collections import OrderedDict
+from pytubefix import exceptions as ptfx_exc
+
 import dateparser
 import json
 import jsonlines
@@ -655,5 +657,131 @@ class Pytubefix_Functions:
                 logged_failures.add(video_id)
 
                 # Immediately append to not_downloaded.jl
+                with jsonlines.open(failed_path, mode='a') as writer:
+                    writer.write(failure_record)
+            
+    # version: 2025-10-14
+    @staticmethod
+    def pytubefix_from_single_v2(url:str, file, nesting_level = 4, source = '', output_path=None, from_date=None, to_date=None):
+        ''' Takes a URL, a file (should always be __file__). Generates an output path for the data, a jsonlines file containing scraped data and a folder with all audio files. '''
+        if not output_path:
+            generated_output_path = Pytubefix_Functions.generate_output_path(file, nesting_level)
+        else:
+            generated_output_path = Path(output_path)
+
+        # try:
+        #     video = YouTube(url, use_oauth=True, allow_oauth_cache=True)
+        # except Exception:
+        #     # If OAuth flow fails or prompts in a non-interactive environment, fall back
+        #     video = YouTube(url, use_oauth=False)
+
+        video = YouTube(url, use_oauth=True, allow_oauth_cache=True)
+        
+        generated_output_path.mkdir(parents=True, exist_ok=True)
+        jsonlines_path = generated_output_path / 'videos.jl'
+        if not source:
+            source = Pytubefix_Functions.extract_source(url)
+        timestamp = datetime.now().strftime('%Y-%m-%d')
+        existing_videos = set()
+        if jsonlines_path.exists():
+            with jsonlines_path.open('r', encoding='utf-8') as f:
+                for line in f:
+                    existing_videos.add(json.loads(line)['video_link'])
+        if video.watch_url in existing_videos:
+            print(f"Already downloaded, skipping: {video.watch_url}")
+            return
+
+        # 1) Check availability up front and skip early for private/unavailable videos
+        try:
+            video.check_availability()
+        except (ptfx_exc.VideoPrivate, ptfx_exc.VideoUnavailable, ptfx_exc.AgeRestrictedError) as e:
+            print(f"Skipping (unavailable/private): {url} — {e}")
+            return
+        except Exception as e:
+            # If anything unexpected happens here, skip safely
+            print(f"Skipping (unexpected availability issue) {url}: {e}")
+            return
+
+        print("Starting to scrape video...")
+
+        try:
+            # Safely get publish date filters
+            if getattr(video, "publish_date", None):
+                pub_date = video.publish_date.date()
+                if from_date and pub_date < from_date:
+                    print("Encountered video older than from_date, stopping further scraping.")
+                    return
+                if to_date and pub_date > to_date:
+                    # We *skip* just this one and continue with the rest
+                    print(f"Skipping: newer than to_date — {url}")
+                    return
+                pub_date_write = video.publish_date.isoformat()
+            else:
+                print("Not possible to retrieve publish date — set as missing/empty string")
+                pub_date_write = ""
+
+            # Safely get title (now that availability was checked, this should be fine)
+            try:
+                video_title = video.title
+            except Exception:
+                video_title = "(unknown title)"
+
+            video_data = {
+                'scrape_date': timestamp,
+                'video_title': video_title,
+                'source': source,
+                'publication_date': pub_date_write,
+                'video_link': video.watch_url,
+                'video_id': video.video_id,
+            }
+            print(f"Scraped: {video_title}")
+
+        except Exception as e:
+            # IMPORTANT: don't access video.title here; it might re-trigger availability checks
+            print(f"Failed to process metadata for {url}. Error: {e}")
+            return
+
+        # Write metadata to file
+        try:
+            with jsonlines.open(jsonlines_path, mode='a') as writer:
+                writer.write_all([video_data])
+            print("💾 Video data written to disk.")
+        except Exception as e:
+            print(f"Failed writing metadata for {url}: {e}")
+            return
+
+        # Download audio
+        m4a_folder_path = generated_output_path / 'm4a_files'
+        m4a_folder_path.mkdir(parents=True, exist_ok=True)
+        failed_path = generated_output_path / 'not_downloaded.jl'
+
+        logged_failures = set()
+        if failed_path.exists():
+            with jsonlines.open(failed_path, mode='r') as reader:
+                for item in reader:
+                    try:
+                        title, video_id_failed, _ = item["error"]
+                        logged_failures.add(video_id_failed)
+                    except Exception as e:
+                        print(f"Skipping malformed failure entry: {item} — {e}")
+
+        video_id = video.video_id
+        file_name = f"{video_id}.m4a"
+        file_path = m4a_folder_path / file_name
+        if file_path.exists():
+            print(f"Already downloaded, skipping: {video_data.get('video_title','(unknown title)')}")
+            return
+
+        try:
+            audio_stream = video.streams.filter(only_audio=True).first()
+            if audio_stream is None:
+                raise ValueError("No audio stream available.")
+            audio_stream.download(output_path=m4a_folder_path, filename=file_name)
+            print(f"✅ Finished! Downloaded audio: {video_data.get('video_title','(unknown title)')}")
+        except Exception as e:
+            print(f"Failed to download audio for {url}: {e}")
+            if video_id not in logged_failures:
+                failure_record = {"error": [video_data.get('video_title','(unknown title)'), video_id, str(e)], "retries": 0}
+                logged_failures.add(video_id)
                 with jsonlines.open(failed_path, mode='a') as writer:
                     writer.write(failure_record)

@@ -29,4 +29,10 @@ class ScrapersItem(scrapy.Item):
     references_links = scrapy.Field()
     source = scrapy.Field()
     other_items = scrapy.Field()
+    keyword = scrapy.Field()
+    post_link = scrapy.Field()
+    post_title = scrapy.Field()
+    post_author = scrapy.Field()
+    thread_text = scrapy.Field()
+    post_HTML = scrapy.Field()
     pass

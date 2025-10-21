@@ -12,10 +12,11 @@ dateparser
 
 # For crawlers in scrapy
 scrapy
+scrapy_playwright
 
 # For scrapy-scrapers using playwright
 playwright
 
 # For scrapers using pytube
-pytube
+# pytube
 pytubefix

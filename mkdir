@@ -1,0 +1,28 @@
+INFO:scrapy.utils.log:Scrapy 2.13.3 started (bot: scrapers)
+2025-08-20 11:58:40 [scrapy.utils.log] INFO: Scrapy 2.13.3 started (bot: scrapers)
+INFO:scrapy.utils.log:Versions:
+{'lxml': '6.0.0',
+ 'libxml2': '2.14.4',
+ 'cssselect': '1.3.0',
+ 'parsel': '1.10.0',
+ 'w3lib': '2.3.1',
+ 'Twisted': '25.5.0',
+ 'Python': '3.12.3 (main, Jun 18 2025, 17:59:45) [GCC 13.3.0]',
+ 'pyOpenSSL': '25.1.0 (OpenSSL 3.0.13 30 Jan 2024)',
+ 'cryptography': '41.0.7',
+ 'Platform': 'Linux-5.15.0-131-generic-x86_64-with-glibc2.39'}
+2025-08-20 11:58:40 [scrapy.utils.log] INFO: Versions:
+{'lxml': '6.0.0',
+ 'libxml2': '2.14.4',
+ 'cssselect': '1.3.0',
+ 'parsel': '1.10.0',
+ 'w3lib': '2.3.1',
+ 'Twisted': '25.5.0',
+ 'Python': '3.12.3 (main, Jun 18 2025, 17:59:45) [GCC 13.3.0]',
+ 'pyOpenSSL': '25.1.0 (OpenSSL 3.0.13 30 Jan 2024)',
+ 'cryptography': '41.0.7',
+ 'Platform': 'Linux-5.15.0-131-generic-x86_64-with-glibc2.39'}
+Usage
+=====
+  scrapy crawl [options] <spider>
+scrapy: error: running 'scrapy crawl' with more than one spider is not supported

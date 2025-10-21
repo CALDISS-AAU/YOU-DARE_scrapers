@@ -1,10 +1,13 @@
 import os
+import re
 import json
+import time
 from urllib.parse import urlparse
 from urllib.parse import urljoin
 from scrapy import signals
 from w3lib.html import remove_tags
 from playwright.async_api import async_playwright
+import contextlib, time
 from .general_functions import General_Functions
 from typing import Union, List
 import logging
@@ -43,13 +46,15 @@ class Static_Scrapy:
             return uri_filled
 
     @staticmethod
-    def load_existing_links(save_file, logger):
+    def load_existing_links(save_file, logger, column="article_link"):
         """
         Loads previously scraped article links from a file to avoid duplicates.
 
         Args:
             save_file (str): Path to the file storing previously scraped items.
             logger (logging.Logger): Logger to report warnings or info.
+	        column (str, optional): The key name inside each JSON object that contains
+            the link. Defaults to "article_link".
 
         Returns:
             set: A set of article links previously scraped.
@@ -61,8 +66,8 @@ class Static_Scrapy:
                     for line in f:
                         try:
                             item = json.loads(line.strip())
-                            if "article_link" in item:
-                                existing.add(item["article_link"])
+                            if column in item:
+                                existing.add(item[column])
                         except json.JSONDecodeError:
                             logger.warning("Skipping invalid JSON line.")
                 logger.info(f"Loaded {len(existing)} existing articles.")
@@ -165,6 +170,290 @@ class Static_Scrapy:
         return [caption_map.get(img, '') for img in image_links]
 
 class Dynamic_Scrapy:
+    ###
+    @staticmethod
+    async def fetch_article_with_wait(
+        url: str,
+        main_selector: str | None = None,
+        img_selector: str = 'img, source, picture',
+        settle_ms: int = 1200,
+        max_total_ms: int = 45000,
+        user_agent: str = (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+    ) -> str:
+        """
+        Generic Playwright fetcher for article pages:
+          - navigates to `url`
+          - optionally waits for `main_selector`
+          - scrolls until content & image count settle (or timeout)
+          - resolves lazy images and srcsets -> sets data-resolved-src
+          - returns fully-rendered HTML (page.content())
+        All site-specific details should be passed via the spider.
+        """
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(
+                viewport={"width": 1280, "height": 2200},
+                user_agent=user_agent,
+            )
+            page = await context.new_page()
+
+            # Navigate
+            await page.goto(url, timeout=60000, wait_until="domcontentloaded")
+
+            # Try to clear common consent dialogs (best effort)
+            try:
+                for sel in [
+                    '#onetrust-accept-btn-handler',
+                    'button:has-text("Accept All")',
+                    '.ot-sdk-container button:has-text("Accept")',
+                    'button:has-text("I Accept")',
+                    'button:has-text("Agree")'
+                ]:
+                    try:
+                        await page.locator(sel).click(timeout=1200)
+                        break
+                    except:
+                        pass
+                await page.evaluate("""
+                    (() => {
+                        document.body.style.overflow = 'auto';
+                        const killers = Array.from(document.querySelectorAll(
+                          '[aria-modal="true"],[role="dialog"],#onetrust-consent-sdk,.ot-sdk-container,.cookie,.consent'
+                        ));
+                        killers.forEach(k => k.remove());
+                    })();
+                """)
+            except:
+                pass
+
+            # Wait for the main content container if provided
+            if main_selector:
+                try:
+                    await page.wait_for_selector(main_selector, timeout=15000, state="attached")
+                except:
+                    # don't fail the fetch if selector never appears; continue anyway
+                    pass
+
+            # JS helper: resolve best image URL and stamp on node as data-resolved-src
+            resolve_imgs_js = """
+                (sel) => {
+                  const pickFromSrcset = (s) => {
+                    try {
+                      const parts = s.split(',').map(x => x.trim()).filter(Boolean);
+                      if (parts.length === 0) return null;
+                      // choose the last candidate (usually largest)
+                      const last = parts[parts.length - 1].split(' ')[0];
+                      return last || null;
+                    } catch(e) { return null; }
+                  };
+                  const els = Array.from(document.querySelectorAll(sel));
+                  for (const el of els) {
+                    let url = null;
+                    const tag = (el.tagName || '').toUpperCase();
+                    if (tag === 'IMG') {
+                      url = el.currentSrc || el.getAttribute('src') ||
+                            el.getAttribute('data-src') || el.getAttribute('data-lazy-src') ||
+                            el.getAttribute('data-original') || null;
+                      if (!url) {
+                        const ss = el.getAttribute('srcset') || el.getAttribute('data-srcset');
+                        if (ss) url = pickFromSrcset(ss);
+                      }
+                    } else {
+                      // <source> or others in <picture>
+                      const ss = el.getAttribute('srcset') || el.getAttribute('data-srcset');
+                      if (ss) url = pickFromSrcset(ss);
+                    }
+                    if (url) {
+                      el.setAttribute('data-resolved-src', url);
+                    }
+                  }
+                }
+            """
+
+            # Scroll/settle loop
+            def monotonic_ms():
+                return int(time.monotonic() * 1000)
+
+            deadline = monotonic_ms() + max_total_ms
+            last_h = await page.evaluate("() => (document.scrollingElement || document.documentElement || document.body).scrollHeight")
+            try:
+                last_img_count = await page.eval_on_selector_all(img_selector, "els => els.length")
+            except:
+                last_img_count = 0
+            plateaus = 0
+
+            while monotonic_ms() < deadline:
+                # Scroll to bottom + poke events
+                try:
+                    await page.evaluate("""
+                        () => {
+                          const el = document.scrollingElement || document.documentElement || document.body;
+                          el.scrollTop = el.scrollHeight;
+                          window.scrollTo(0, el.scrollHeight);
+                          window.dispatchEvent(new Event('scroll'));
+                          window.dispatchEvent(new Event('resize'));
+                          el.dispatchEvent(new Event('scroll', {bubbles:true}));
+                        }
+                    """)
+                except:
+                    pass
+                await page.mouse.wheel(0, 1600)
+
+                # Let things load a bit
+                await page.wait_for_timeout(int(settle_ms * 0.5))
+                try:
+                    await page.wait_for_load_state("networkidle", timeout=2000)
+                except:
+                    pass
+
+                # Resolve images on each pass
+                try:
+                    await page.evaluate(resolve_imgs_js, img_selector)
+                except:
+                    pass
+
+                # Check progress
+                new_h = await page.evaluate("() => (document.scrollingElement || document.documentElement || document.body).scrollHeight")
+                try:
+                    new_img_count = await page.eval_on_selector_all(img_selector, "els => els.length")
+                except:
+                    new_img_count = last_img_count
+
+                if new_h <= last_h and new_img_count <= last_img_count:
+                    plateaus += 1
+                    if plateaus >= 3:
+                        break
+                else:
+                    plateaus = 0
+                    last_h = new_h
+                    last_img_count = new_img_count
+
+            # Final resolve before capture
+            try:
+                await page.evaluate(resolve_imgs_js, img_selector)
+            except:
+                pass
+
+            html = await page.content()
+            await context.close()
+            await browser.close()
+            return html
+    ###
+    # v4.0-min-pause — original adaptive scroller + post-scroll pause (new names)
+    @staticmethod
+    async def scroll_adaptive_pause_v1(page, article_selector, max_scrolls=None, start_wait=1000, max_wait=60000, growth_factor=2.0, plateau_checks=2, post_scroll_pause=1500):
+        last_height=await page.evaluate("document.body.scrollHeight")
+        last_count=await page.eval_on_selector_all(article_selector,"els=>els.length")
+        wait_time=start_wait
+        scrolls=0
+        while (max_scrolls is None or scrolls<max_scrolls):
+            scrolls+=1
+            print(f"[adaptive+pause] scroll #{scrolls} | wait={wait_time}ms | items={last_count}")
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            attempts=0
+            changed=False
+            while attempts<=plateau_checks:
+                await page.wait_for_timeout(int(wait_time))
+                try:
+                    await page.wait_for_load_state("networkidle",timeout=3000)
+                except:
+                    pass
+                new_height=await page.evaluate("document.body.scrollHeight")
+                new_count=await page.eval_on_selector_all(article_selector,"els=>els.length")
+                if new_height>last_height or new_count>last_count:
+                    last_height=new_height
+                    last_count=new_count
+                    changed=True
+                    if attempts==0 and wait_time>start_wait:
+                        wait_time=max(start_wait,int(wait_time/1.25))
+                    break
+                attempts+=1
+                if attempts<=plateau_checks and wait_time<max_wait:
+                    wait_time=min(int(wait_time*growth_factor),max_wait)
+                    print(f"[adaptive+pause] no change; increasing wait to {wait_time}ms")
+            if not changed:
+                print("[adaptive+pause] no more new content; stopping")
+                break
+            await page.wait_for_timeout(int(post_scroll_pause))
+        print(f"[adaptive+pause] done after {scrolls} scrolls | total items={last_count}")
+        return await page.content()
+
+    # v4.0-min-pause — fetch wrapper (new name)
+    @staticmethod
+    async def fetch_with_playwright_adaptive_pause_v1(url, article_selector, max_scrolls=None, start_wait=1000, max_wait=60000, growth_factor=2.0, plateau_checks=2, post_scroll_pause=1500):
+        async with async_playwright() as p:
+            browser=await p.chromium.launch(headless=True)
+            page=await browser.new_page()
+            await page.goto(url, timeout=60000)
+            content=await Dynamic_Scrapy.scroll_adaptive_pause_v1(
+                page,
+                article_selector,
+                max_scrolls,
+                start_wait,
+                max_wait,
+                growth_factor,
+                plateau_checks,
+                post_scroll_pause
+            )
+            await browser.close()
+            return content
+
+    @staticmethod
+    async def scroll_adaptive(page, article_selector, max_scrolls=None, start_wait=1000, max_wait=60000, growth_factor=2.0, plateau_checks=2):
+        last_height=await page.evaluate("document.body.scrollHeight")
+        last_count=await page.eval_on_selector_all(article_selector,"els=>els.length")
+        wait_time=start_wait
+        scrolls=0
+        while (max_scrolls is None or scrolls<max_scrolls):
+            scrolls+=1
+            print(f"[adaptive] scroll #{scrolls} | wait={wait_time}ms | items={last_count}")
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            attempts=0
+            changed=False
+            while attempts<=plateau_checks:
+                await page.wait_for_timeout(int(wait_time))
+                new_height=await page.evaluate("document.body.scrollHeight")
+                new_count=await page.eval_on_selector_all(article_selector,"els=>els.length")
+                if new_height>last_height or new_count>last_count:
+                    last_height=new_height
+                    last_count=new_count
+                    changed=True
+                    # if it took extra attempts to change, keep the longer wait; else gently decay
+                    if attempts==0 and wait_time>start_wait:
+                        wait_time=max(start_wait,int(wait_time/1.25))
+                    break
+                attempts+=1
+                if attempts<=plateau_checks and wait_time<max_wait:
+                    wait_time=min(int(wait_time*growth_factor),max_wait)
+                    print(f"[adaptive] no change; increasing wait to {wait_time}ms")
+            if not changed:
+                print("[adaptive] no more new content; stopping")
+                break
+        print(f"[adaptive] done after {scrolls} scrolls | total items={last_count}")
+        return await page.content()
+
+    @staticmethod
+    async def fetch_with_playwright_adaptive(url, article_selector, max_scrolls=None, start_wait=1000, max_wait=60000, growth_factor=2.0, plateau_checks=2):
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page()
+            await page.goto(url, timeout=60000)
+            content = await Dynamic_Scrapy.scroll_adaptive(
+                page,
+                article_selector,          # <- selector goes here
+                max_scrolls,
+                start_wait,
+                max_wait,
+                growth_factor,
+                plateau_checks
+            )
+            await browser.close()
+            return content
+
     @staticmethod
     def get_feed_output_path(settings, name, region):
         """
@@ -436,7 +725,7 @@ class Dynamic_Scrapy_Click:
         click_button_selector,
         links_selector,
         max_clicks=None,
-        wait_time=2000,
+        wait_time=3000,
         stop_when_button_has_class: Union[str, List[str]] = None
     ):
         """
@@ -466,7 +755,7 @@ class Dynamic_Scrapy_Click:
             click_count = 0
             while True:
                 try:
-                    await page.wait_for_selector(click_button_selector, timeout=3000)
+                    await page.wait_for_selector(click_button_selector, timeout=15000, state='visible')
                     button = await page.query_selector(click_button_selector)
                     if button is None:
                         logger.info("No button found.")
@@ -508,6 +797,180 @@ class Dynamic_Scrapy_Click:
             logger.info(f"Scraping complete. Total links collected: {len(all_links)}.")
             return all_links
 
+
+    @staticmethod
+    async def fetch_links_with_clicking_xpath(
+        url,
+        click_button_selector,
+        links_selector,
+        max_clicks=None,
+        wait_time=3000,
+        stop_when_button_has_class: Union[str, List[str]] = None
+    ):
+        """
+        Repeatedly clicks a button to load more content and scrapes links.
+        Stops if max_clicks is reached or the button gets a 'disabled' class.
+        """
+        all_links = []
+
+        async with async_playwright() as p:
+            logger.info(f"Launching browser to scrape from {url}")
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page()
+            await page.goto(url, timeout=60000, wait_until="domcontentloaded")
+            logger.info("Initial page loaded.")
+
+            # Initial links
+            elements = await page.query_selector_all(f"xpath={links_selector}")
+            links = [await el.get_attribute('href') for el in elements]
+            all_links.extend(links)
+            logger.info(f"Collected {len(links)} initial links.")
+
+            if max_clicks == 0:
+                logger.info("Max clicks is 0. Exiting early.")
+                await browser.close()
+                return all_links
+
+            click_count = 0
+            while True:
+                try:
+                    await page.wait_for_selector(click_button_selector, timeout=15000, state='visible')
+                    button = await page.query_selector(click_button_selector)
+                    if button is None:
+                        logger.info("No button found.")
+                        break
+
+                    # Stop if button has a disabled class (optional)
+                    if stop_when_button_has_class:
+                        class_attr = await button.get_attribute("class") or ""
+                        stop_classes = (
+                            [stop_when_button_has_class]
+                            if isinstance(stop_when_button_has_class, str)
+                            else stop_when_button_has_class
+                        )
+                        for stop_class in stop_classes:
+                            if stop_class in class_attr:
+                                logger.info(f"Button has class '{stop_class}' — stopping.")
+                                await browser.close()
+                                return all_links
+
+                    await button.click()
+                    await page.wait_for_timeout(wait_time)
+
+                    elements = await page.query_selector_all(f"xpath={links_selector}")
+                    links = [await el.get_attribute('href') for el in elements]
+                    all_links.extend(links)
+
+                    click_count += 1
+                    logger.info(f"Click {click_count}: Collected {len(links)} links (Total: {len(all_links)}).")
+
+                    if max_clicks is not None and click_count >= max_clicks:
+                        logger.info("Reached max_clicks.")
+                        break
+
+                except Exception as e:
+                    logger.warning(f"Error during clicking loop: {e}")
+                    break
+
+            await browser.close()
+            logger.info(f"Scraping complete. Total links collected: {len(all_links)}.")
+            return all_links
+            
+########################
+    @staticmethod
+    async def fetch_links_with_clicking_stop_at_certain_article(
+        url,
+        click_button_selector,
+        links_selector,
+        max_clicks=None,
+        wait_time=2000,
+        stop_when_button_has_class = None,
+        stop_if_url_starts_with = None  # NEW
+    ):
+        """
+        Repeatedly clicks a button to load more content and scrapes links.
+        Stops if max_clicks is reached or the button gets a 'disabled' class.
+        """
+        all_links = []
+
+        async with async_playwright() as p:
+            logger.info(f"Launching browser to scrape from {url}")
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page()
+            await page.goto(url, timeout=60000, wait_until="domcontentloaded")
+            logger.info("Initial page loaded.")
+
+            # Initial links
+            elements = await page.query_selector_all(links_selector)
+            links = [await el.get_attribute('href') for el in elements]
+            all_links.extend(links)
+            logger.info(f"Collected {len(links)} initial links.")
+
+            if max_clicks == 0:
+                logger.info("Max clicks is 0. Exiting early.")
+                await browser.close()
+                return all_links
+
+            click_count = 0
+            while True:
+                try:
+                    await page.wait_for_selector(click_button_selector, timeout=5000)
+                    button = await page.query_selector(click_button_selector)
+                    if button is None:
+                        logger.info("No button found.")
+                        break
+
+                    # Stop if button has a disabled class (optional)
+                    if stop_when_button_has_class:
+                        class_attr = await button.get_attribute("class") or ""
+                        stop_classes = (
+                            [stop_when_button_has_class]
+                            if isinstance(stop_when_button_has_class, str)
+                            else stop_when_button_has_class
+                        )
+                        for stop_class in stop_classes:
+                            if stop_class in class_attr:
+                                logger.info(f"Button has class '{stop_class}' — stopping.")
+                                await browser.close()
+                                return all_links
+
+                    await button.click()
+                    await page.wait_for_timeout(wait_time)
+                    
+                    # STOP IF AN ARTICLE STARTS with URL : https://xn--motstndsrrelsen-llb70a.se/2021/05/{whatever}
+                    if stop_if_url_starts_with: 
+                        for link in links:
+                            match = re.search(r'/(\d{4}/\d{2}/\d{2})/', link)
+                            if match:
+                                link_date = match.group(1)
+                                if link_date < stop_if_url_starts_with:
+                                    logger.info(f"Found link the with {link_date} < {stop_if_url_starts_with} - stop.")
+                                    await browser.close()
+                                    return all_links
+
+                    elements = await page.query_selector_all(links_selector)
+                    links = [await el.get_attribute('href') for el in elements]
+                    all_links.extend(links)
+
+                    click_count += 1
+                    logger.info(f"Click {click_count}: Collected {len(links)} links (Total: {len(all_links)}).")
+
+                    if max_clicks is not None and click_count >= max_clicks:
+                        logger.info("Reached max_clicks.")
+                        break
+
+                except Exception as e:
+                    logger.warning(f"Error during clicking loop: {e}")
+                    break
+
+            await browser.close()
+            logger.info(f"Scraping complete. Total links collected: {len(all_links)}.")
+            return all_links
+
+########################
+
+
+
     @staticmethod
     async def extract_entries_from_links(page, container_selector, link_selector, publication_date_selector):
         """
@@ -543,6 +1006,8 @@ class Dynamic_Scrapy_Click:
                 continue
 
         return entries
+
+
 
     @staticmethod
     async def fetch_links_and_publication_date_with_clicking(
@@ -580,7 +1045,7 @@ class Dynamic_Scrapy_Click:
             click_count = 0
             while True:
                 try:
-                    await page.wait_for_selector(click_button_selector, timeout=3000)
+                    await page.wait_for_selector(click_button_selector, timeout=5000)
                     button = await page.query_selector(click_button_selector)
                     if not button:
                         logger.info("No button found.")
@@ -666,7 +1131,7 @@ class DynamicClickAndWait:
         click_button_selector,
         links_selector,
         max_clicks=200,
-        wait_time=3000,
+        wait_time=5000,
         stop_when_button_has_class=None
     ):
         print(f"Opening browser to fetch links from {url}")
@@ -693,9 +1158,13 @@ class DynamicClickAndWait:
 
                 print(f"[Click #{click_num + 1}] Articles before click: {prev_count}")
                 await page.wait_for_timeout(2000)
-                await button.scroll_into_view_if_needed()
-                await button.click(timeout=20000, no_wait_after=True)
+                await page.evaluate("arguments[0].scrollIntoView()", button)
+                # await page.evaluate("(element) => element.scrollIntoView()", button)
+
                 await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                await page.wait_for_selector(click_button_selector, state='visible', timeout=30000)
+                await button.click(timeout=10000, no_wait_after=True)
+
                 
 
                 # Try 3 times to detect new content
@@ -726,3 +1195,250 @@ class DynamicClickAndWait:
         print(f"Final total article links collected: {len(links)}")
         return list(links)
 
+from playwright.async_api import async_playwright
+import contextlib
+
+import contextlib
+
+class DynamicClickAndWait_2:
+    @staticmethod
+    async def click_and_collect_links(
+        url,
+        click_button_selector,
+        links_selector,
+        max_clicks=None,          # None = unlimited; 0 = no clicks; N = up to N clicks
+        wait_time=5000,
+        stop_when_button_has_class=None
+    ):
+        print(f"Opening browser to fetch links from {url}")
+        links = set()
+
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page()
+            await page.goto(url, wait_until='domcontentloaded')
+
+            # Best-effort: dismiss common consent banners
+            for sel in [
+                "#onetrust-accept-btn-handler",
+                "button:has-text('Elfogad')",
+                "button:has-text('elfogad')",
+                "button:has-text('Accept')",
+                "button:has-text('Rendben')",
+                ".cm-btn-accept",
+            ]:
+                with contextlib.suppress(Exception):
+                    btn = page.locator(sel).first
+                    if await btn.count() and await btn.is_visible():
+                        await btn.click()
+                        break
+
+            click_num = 0
+            while True:
+                # Respect user-specified limit
+                if max_clicks is not None and click_num >= int(max_clicks):
+                    print("Reached max_clicks limit.")
+                    break
+
+                # Reveal lazy UI first
+                await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                await page.wait_for_timeout(300)
+
+                buttons = page.locator(click_button_selector)
+                count = await buttons.count()
+                if count == 0:
+                    print("No 'Load more' button found.")
+                    break
+
+                # Prefer the bottom-most match
+                button_loc = buttons.last
+
+                # Optional external stop condition
+                if stop_when_button_has_class and await page.locator(stop_when_button_has_class).count() > 0:
+                    print("Stop condition matched.")
+                    break
+
+                prev_count = await page.locator(links_selector).count()
+                print(f"[Click #{click_num + 1}] Articles before click: {prev_count}")
+
+                # Try to make it visible, but don't block forever
+                with contextlib.suppress(Exception):
+                    await button_loc.scroll_into_view_if_needed(timeout=1000)
+
+                # If it's hidden, assume end-of-feed and stop cleanly
+                try:
+                    visible = await button_loc.is_visible()
+                except Exception:
+                    visible = False
+
+                if not visible:
+                    print("Load more button present but hidden. Assuming no more items. Stopping.")
+                    break
+
+                # Click the button (normal -> force -> JS fallback) without crashing
+                clicked = False
+                try:
+                    await button_loc.click(timeout=5000)
+                    clicked = True
+                except Exception as e1:
+                    print(f"Normal click failed ({e1}). Trying force click.")
+                    try:
+                        await button_loc.click(timeout=5000, force=True)
+                        clicked = True
+                    except Exception as e2:
+                        print(f"Force click failed ({e2}). Trying JS click fallback.")
+                        try:
+                            handle = await button_loc.element_handle()
+                            if handle:
+                                await page.evaluate("(el)=>el.click()", handle)
+                                clicked = True
+                        except Exception as e3:
+                            print(f"JS click fallback failed ({e3}). Stopping.")
+                            clicked = False
+
+                if not clicked:
+                    break
+
+                # Incremental wait loop to detect newly loaded items
+                new_count = prev_count
+                for retry in range(6):
+                    w = wait_time * (retry + 1)
+                    print(f"[Retry {retry+1}] Waiting {w}ms...")
+                    await page.wait_for_timeout(w)
+                    new_count = await page.locator(links_selector).count()
+                    print(f"[Retry {retry+1}] Article count: {new_count}")
+                    if new_count > prev_count:
+                        break
+
+                if new_count == prev_count:
+                    print("No new articles detected after click. Exiting.")
+                    break
+
+                click_num += 1
+
+            print("Finished clicking. Collecting links...")
+
+            # Works with CSS or XPath because we use a Locator
+            hrefs = await page.locator(links_selector).evaluate_all(
+                "els => els.map(el => el.href || el.getAttribute('href'))"
+            )
+            for href in hrefs:
+                if href:
+                    links.add(href)
+
+            await browser.close()
+
+        print(f"Final total article links collected: {len(links)}")
+        return list(links)
+
+
+class DynamicScrollAndClick:
+    @staticmethod
+    async def _scroll_pass(page, article_selector, start_wait=800, max_wait=8000, growth=1.6, plateau_checks=2):
+        last_h=await page.evaluate("()=>(document.scrollingElement||document.documentElement||document.body).scrollHeight")
+        last_n=await page.eval_on_selector_all(article_selector,"els=>els.length")
+        wait=start_wait
+        tries=0
+        while tries<=plateau_checks:
+            await page.evaluate("()=>{const el=document.scrollingElement||document.documentElement||document.body;el.scrollTop=el.scrollHeight;window.dispatchEvent(new Event('scroll'));}")
+            await page.mouse.wheel(0,1600)
+            await page.wait_for_timeout(wait)
+            with contextlib.suppress(Exception):
+                await page.wait_for_load_state("networkidle",timeout=2000)
+            new_h=await page.evaluate("()=>(document.scrollingElement||document.documentElement||document.body).scrollHeight")
+            new_n=await page.eval_on_selector_all(article_selector,"els=>els.length")
+            if new_h>last_h or new_n>last_n:
+                last_h, last_n=new_h, new_n
+                if wait>start_wait: wait=max(start_wait,int(wait/1.25))
+                tries=0
+            else:
+                tries+=1
+                wait=min(int(wait*growth),max_wait)
+        return last_n
+
+    @staticmethod
+    async def fetch_with_playwright_hybrid(
+        url:str,
+        article_selector:str,
+        load_more_selector:str,
+        max_cycles:int|None=None,          # max number of button clicks
+        wait_after_click:int=1200,
+        stop_when_button_has_class:str|list[str]|None=None,
+        user_agent:str=("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+    )->str:
+        async with async_playwright() as p:
+            browser=await p.chromium.launch(headless=True)
+            ctx=await browser.new_context(viewport={"width":1280,"height":2200},user_agent=user_agent)
+            page=await ctx.new_page()
+            await page.goto(url,timeout=60000,wait_until="domcontentloaded")
+
+            # best-effort cookie banner clear
+            for sel in ['#onetrust-accept-btn-handler','button:has-text("Accept All")','button:has-text("Accept")','button:has-text("I agree")']:
+                with contextlib.suppress(Exception):
+                    btn=page.locator(sel).first
+                    if await btn.count() and await btn.is_visible(): await btn.click(); break
+
+            with contextlib.suppress(Exception):
+                await page.wait_for_selector(article_selector,timeout=15000)
+
+            clicks=0
+            prev_total=await page.locator(article_selector).count()
+
+            while True:
+                # STEP 1: scroll to bottom until short plateau
+                after_scroll=await DynamicScrollAndClick._scroll_pass(page, article_selector)
+
+                # STEP 2: if there's a load-more button, click it; else STOP
+                buttons=page.locator(load_more_selector)
+                if not await buttons.count():
+                    break
+                btn=buttons.last
+
+                if stop_when_button_has_class:
+                    classes=await btn.get_attribute("class") or ""
+                    stop_list=[stop_when_button_has_class] if isinstance(stop_when_button_has_class,str) else stop_when_button_has_class
+                    if any(s in classes for s in stop_list):
+                        break
+
+                with contextlib.suppress(Exception):
+                    await btn.scroll_into_view_if_needed(timeout=1000)
+
+                clicked=False
+                try:
+                    await btn.click(timeout=5000); clicked=True
+                except Exception:
+                    with contextlib.suppress(Exception):
+                        await btn.click(timeout=5000,force=True); clicked=True
+                    if not clicked:
+                        with contextlib.suppress(Exception):
+                            handle=await btn.element_handle()
+                            if handle: await page.evaluate("(el)=>el.click()",handle); clicked=True
+                if not clicked:
+                    break
+
+                # wait for new cards to show up (backoff) — then loop back to Step 1
+                grew=False
+                for i in range(6):
+                    await page.wait_for_timeout(wait_after_click*(i+1))
+                    with contextlib.suppress(Exception):
+                        await page.wait_for_load_state("networkidle",timeout=2500)
+                    cnt=await page.locator(article_selector).count()
+                    if cnt>after_scroll:
+                        grew=True
+                        prev_total=cnt
+                        break
+
+                if not grew:
+                    # some sites need a nudge after clicking
+                    cnt=await DynamicScrollAndClick._scroll_pass(page, article_selector)
+                    if cnt<=after_scroll:
+                        break
+                    prev_total=cnt
+
+                clicks+=1
+                if max_cycles is not None and clicks>=int(max_cycles):
+                    break
+
+            html=await page.content()
+            await ctx.close(); await browser.close()
+            return html

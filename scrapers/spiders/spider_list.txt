@@ -1,0 +1,185 @@
+Typer:
+- Statiske:
+    - Alt fra forsiden:
+        - Dansk regnbueråd nyheder (DK)
+        - Les identitaires (Fr)
+    - Flere informationer fra forsiden, og resten fra artikelsiden:
+        - Generation Zemmour (Fr)
+        - La cocarde etudiante (FR)
+    - Alt på nær link fra artikelsiden:
+        - Nordfront (DK)
+- Dynamiske:
+    - Scrolling:
+        - Alt fra forsiden:
+            - SIAD (DK)
+        - Flere informationer fra forsiden, og resten fra artikelsiden:
+            - 
+        - Alt på nær link fra artikelsiden:
+            - Maniphesto (DK)
+    - Clicking:
+        - Alt fra forsiden:
+            - 
+        - Flere informationer fra forsiden, og resten fra artikelsiden:
+            - 
+        - Alt på nær link fra artikelsiden:
+            - Reel ligestilling (DK)
+Denmark:
+- nordfront:
+    - Name: nordfront_SPIDER
+    - Type: Static spider 
+    - From front page:
+        - article_link
+        - next_page
+    - From article page:
+        - article_title
+        - publication_date
+        - article_text
+        - article_HTML
+        - image_links
+        - image_captions
+        - youtube
+        - external_links
+    - Can be used as example scraper for website where:
+        - Articles needs to be opened to get acces to all information
+        - Only article link is parsed from parse_front to parse_article
+        - The page can be turned using 'next page' button
+- SIAD: 
+    NB! Der er få artikler som hverken har titel eller link. 
+    Da deres link i datasættet vil blive gemt som "Null", 
+      og artikler kun bliver hentet, hvis ikke deres link allerede er i datasættet, 
+      vil kun den første af disse artikler blive hentet!
+    - Name: SIAD_SPIDER
+    - Type: Dynamic spider 
+    - From front page:
+        - article_link
+        - article_title
+        - publication_date
+        - article_text
+        - article_HTML
+        - image_links
+        - image_captions
+        - external_links
+    - From article page:
+        -         
+    - Can be used as example scraper for website where:
+        - All information can be accessed from the front page
+        - New articles are loaded by scrolling
+- dansk_regnbueraad_nyheder:
+    - Name: dansk_regnbueraad_SPIDER
+    - Type: Static spider 
+    - From front page:
+        - article_link
+        - article_title
+        - publication_date
+        - author
+        - article_text
+        - image_links
+        - image_captions
+        - youtube
+        - external_links
+        - article_HTML
+        - next_page
+    - From article page:
+        - 
+    - Can be used as example scraper for website where:
+        - All information can be accessed from the front page
+        - The page can be turned using 'next page' button
+- maniphesto: 
+    - Name: maniphesto_blog_SPIDER
+    - Type: Dynamic spider 
+    - From front page:
+        - article_link
+    - From article page:
+        - article_title
+        - publication_date
+        - author
+        - article_text
+        - article_HTML
+        - image_links
+        - external_links    
+        - youtube_links    
+    - Can be used as example scraper for website where:
+        - All information, exept for the link to follow, can be accessed from the article page
+        - New articles are loaded by scrolling
+- reel ligestilling:
+    - Name: reel_ligestilling_SPIDER
+    - Type: Dynamic spider (click) 
+    - From front page:
+        - article_link
+        - next_page
+        - next_page_STOP (condition that has to be met to ensure that it's the last page)
+    - From article page:
+        - article_title
+        - author
+        - publication_date
+        - article_text
+        - article_HTML
+        - image_links
+        - image_captions
+        - youtube
+        - external_links
+    - Can be used as example scraper for website where:
+        - Articles needs to be opened to get acces to all information
+        - Only article link is parsed from parse_front to parse_article
+        - New articles can be loaded clicking the 'next page' button
+
+France:
+- generation_zemmour:
+    - Name: generation_zemmour_SPIDER
+    - Type: Static spider 
+    - From front page:
+        - article_link
+        - publication_date
+        - next_page
+    - From article page:
+        - article_title
+        - article_sub_title
+        - article_text
+        - article_HTML
+        - image_links
+        - external_links
+        - author
+        - article_references
+    - Can be used as example scraper for website where:
+        - Articles needs to be opened to get acces to all information
+        - Multiple pieces of information is parsed from parse_front to parse_article
+        - The page can be turned using 'next page' button
+- la_cocarde_etudiante:
+    - Name: la_cocarde_etudiante_SPIDER
+    - Type: Static spider 
+    - From front page:
+        - article_link
+        - publication_date
+        - next_page
+    - From article page:
+        - article_title
+        - article_text
+        - article_HTML
+        - image_links
+        - author
+        - themes
+        - article_references
+    - Can be used as example scraper for website where:
+        - Articles needs to be opened to get acces to all information
+        - Multiple pieces of information is parsed from parse_front to parse_article
+        - The page can be turned using 'next page' button
+- les_identitaires:
+    - Name: les_identitaires_SPIDER
+    - Type: Static spider 
+    - From front page:
+        - article_link
+        - next_page
+    - From article page:
+        - article_title
+        - tags
+        - publication_date
+        - article_text
+        - article_HTML
+        - image_links
+        - author
+        - themes
+        - external_links
+    - Can be used as example scraper for website where:
+        - Articles needs to be opened to get acces to all information
+        - Only article link is parsed from parse_front to parse_article
+        - The page can be turned using 'next page' button
