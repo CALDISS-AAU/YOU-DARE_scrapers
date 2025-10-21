@@ -16,22 +16,21 @@ from ...functions.general_functions import General_Functions  # Custom shared fu
 ''' THIS SPIDER IS NOT ABLE TO RUN!
     To run this spider pass the following to the terminal:
         cd ./YOU-DARE/scrapers
-        scrapy crawl gioventu_nazionale_SPIDER -a max_pages=x # MUST MATCH SPIDER NAME!
+        scrapy crawl familyday_dynamic_SPIDER -a max_pages=x # MUST MATCH SPIDER NAME!
     where -a max_pages=x is an optional parameter
 '''
 
-
 ### CREATING THE SPIDER ###
 class DynamicSpider(scrapy.Spider): # Can be changed but it's not necessary - if changed also change Super in from_crawler function
-    name = 'gioventu_nazionale_SPIDER' # Spider name - must be unique within given project
+    name = 'familyday_dynamic_SPIDER' # Spider name - must be unique within given project
     region = 'Italy' # Parent folder - used for folderstructure within the data folder - MUST BE IDENTICAL TO SPIDERS DIRECT PARENT FOLDER!
-    source = 'Gioventu nazionale' # The source of the articles - NOT the author!
-    start_urls = ['https://www.gioventunazionale.it/news/'] # The url where the content to be scraped is found - can be multiple urls IF THE CSS/XPATH IS IDENTICAL!
+    source = 'Family Day' # The source of the articles - NOT the author!
+    start_urls = ['https://familyday.info/#notizie'] # The url where the content to be scraped is found - can be multiple urls IF THE CSS/XPATH IS IDENTICAL!
 
     ## HTML directions ##
     ''' These can be both CSS and XPath or a mix as long as it's matched within the response functions within the different parse functions.
         E.g. 'some_css' must use response.css('some_css') and 'some_xpath' must use response.xpath('some_xpath')
-    '''
+    ''' 
     # QUERIES FROM THE FRONT PAGE!!!
     ''' CSS or XPath queries for relevant information found on the front page. 
         For functionality the following queries HAVE to be found on the front page:
@@ -39,27 +38,28 @@ class DynamicSpider(scrapy.Spider): # Can be changed but it's not necessary - if
             next_page # The links to the next page
         How to pass information from the parse_front function to the parse_article function will be described in greater detail later on.
     '''
-
-    links_to_follow_CSS = 'h3.entry-title a::attr(href)'
-    
-    click_button_selector_CSS = '.paginator .paginator-more-button ' # CSS selector for the "Load more" button
-
-    click_button_selector_STOP_CSS = '.paginator .paginator-more-button.hidden' # CSS for last "next page"-button (it still has a link but is disabled so it would keep loading the same articles on the last page indefinitely)
+    links_to_follow_CSS = '.post-content a::attr(href)'
+    click_button_selector_CSS = '.pagination .alignleft a' # CSS selector for the "Load more" button
+    click_button_selector_STOP_CSS = '' # CSS for last "next page"-button (it still has a link but is disabled so it would keep loading the same articles on the last page indefinitely)
                                                 # If this is not relevant, delete this query and delete the argument stop_when_button_has_class in the 
                                                 # Dynamic_Scrapy_Click.fetch_links_with_clicking function (inside parse), or set it to it's default value - None
     # FROM THE ARTICLE PAGE!!!
     ''' CSS or XPath queries for relevant information found on the individual article pages.
         These can obviously be omittet if all relevant information can be scraped from the front page, in which case parse_article should be disabled.
     '''
-    article_title_CSS = 'h1.entry-title::text'
-    author_CSS = 'a.author.vcard span.fn::text'
-    publication_date_CSS = 'time.entry-date.updated::text'
-    article_text_bits_CSS = 'div.entry-content :not(script)::text'
-    image_links_CSS = 'div.entry-content img::attr(src), div.post-thumbnail img::attr(src)'
-    external_links_CSS = '.entry-content p a::attr(href)'
-    article_HTML_bits_CSS = 'div.entry-content'
-    embedded_media_CSS = 'iframe::attr(src)'
-    article_categories_CSS = '.category-link a::text'
+
+    article_title_CSS = '.entry-title::text'
+    author_CSS = '.et_pb_blurb_0_tb_body .et_pb_module_header a::text'
+
+    publication_date_xpath = '//div[contains(@class, "et_pb_blurb")]//span[contains(text(), "")]/ancestor::div[contains(@class, "et_pb_blurb")]//h4/span/text()' #'DO NOT TOUCH! Prev. version was CSS selector: .et_pb_blurb_2_tb_body .et_pb_module_header span::text, .et_pb_blurb_1_tb_body .et_pb_module_header span::text' which does not work. Each article is different, and date is placed differently so we are getting the calendar icon with xpath.
+    article_text_bits_xpath = '//div[contains(@class, "et_pb_text_inner")]//h5/text() | //div[contains(@class, "et_pb_post_content_0_tb_body")]//*[not(ancestor::div[contains(@class, "et_social_inline")])]/text()' # Previous : '.et_pb_text_inner h5::text, .et_pb_post_content_0_tb_body :not(.et_social_inline)::text'
+    image_links_CSS = '.et_pb_module.et_pb_image img::attr(src), .et_pb_post_content_0_tb_body img::attr(src)'
+    external_links_CSS = '.et_pb_post_content_0_tb_body p a::attr(href)'
+    article_HTML_bits_CSS = '.et_pb_post_content_0_tb_body'
+    article_categories_xpath =  '//div[contains(@class, "et_pb_blurb")][.//span[contains(text(), "")]]//h4//a/text()'
+    embedded_media_links_CSS =   'iframe::attr(data-src)'
+
+
     # ... other queries
 
     ### IMPORTANT FUNCTIONS FOR SETUP THAT CANNOT BE OMITTED AND PARAMETERS SHOULD NOT BE CHANGED! ###
@@ -117,7 +117,6 @@ class DynamicSpider(scrapy.Spider): # Can be changed but it's not necessary - if
             item = self.parse_article(article_sel, link) # Goes to each article and scrapes relevant information
             if item: # If any information has been scraped the data is added to 'collected_items'
                 collected_items.append(item)
-        
         returnValue(collected_items) # MUST!!! be 'returnValue' since scrapy can't catch data from '@inlineCallbacks' using 'yield'!!!
 
     def parse_article(self, response, article_link): # Can be renamed. IF IT IS REMEBER TO REDIRECT THE CALLBACK IN PARSE!
@@ -137,43 +136,41 @@ class DynamicSpider(scrapy.Spider): # Can be changed but it's not necessary - if
         else:
             author_clean = author
         # Extract 'publication_date' 
-        publication_date = response.css(self.publication_date_CSS).get()
+        publication_date = response.xpath(self.publication_date_xpath).get()
         # Extract 'article_text'
-        article_text_bits = response.css(self.article_text_bits_CSS).getall() 
+        article_text_bits = response.xpath(self.article_text_bits_xpath).getall() 
         article_text_clean = General_Functions.join_and_clean(article_text_bits) # Joins and cleans all text elements - See doc string
         # Extract 'image_links' 
         image_links = response.css(self.image_links_CSS).getall()
         # Extratc 'image_captions' 
         #image_captions = response.css(self.image_captions_CSS).getall()
         # Match images with their relevant caption
-        #fixed_captions = Dynamic_Scrapy_Click.match_images_with_captions(
-            #image_links=image_links,
-            #image_captions_html=image_captions,
-            #captioned_image_srcs=image_links
-        #)
         # Extract 'external_links' 
         external_links = response.css(self.external_links_CSS).getall()
         # Extract 'youtube_links' 
-        #youtube_links = response.css(self.youtube_CSS).getall()
         # Extract 'article_HTML'
         article_HTML = response.get()
         #article_HTML = ' '.join(article_HTML_bits).strip()
-        article_categories = response.css(self.article_categories_CSS).get()
-        embedded_media = response.css(self.embedded_media_CSS).getall()
+        external_links = response.css(self.external_links_CSS).getall()
+        article_categories = response.xpath(self.article_categories_xpath).getall()
+        embedded_media = response.css(self.embedded_media_links_CSS).getall()
 
         # Assign variables to items here
         items['scrape_date'] = timestamp
+        items['publication_date'] = publication_date
         items['source'] = self.source
         items['article_link'] = article_link
-        items['publication_date'] = publication_date
         items['article_title'] = article_title_clean
-        items['article_text'] = article_text_clean
-        items['article_HTML'] = article_HTML
         items['author'] = author_clean
+        items['article_text'] = article_text_clean
         items['image_links'] = image_links
-        items['embedded_media_links'] = embedded_media
-        items['categories']= article_categories
+        items['article_HTML'] = article_HTML
         items['external_links'] = external_links
+        items['article_categories'] = article_categories
+        items['embedded_media_links'] = embedded_media
+        items['other_items'] = 'None'
+
+
 
         self.logger.info(f"Scraped article: {article_title_clean} ({article_link})") # Logs successful scrape
 
