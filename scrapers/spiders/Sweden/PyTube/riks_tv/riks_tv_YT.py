@@ -1,9 +1,9 @@
-from ....functions.pytubefix_functions import Pytubefix_Functions
+from .....functions.pytubefix_functions import Pytubefix_Functions
 from datetime import date
 
 ''' To run this scraper from bash do the following:
         cd ./YOU-DARE/scrapers
-        python -m scrapers.spiders.Sweden.PyTube.riks_tv_YT
+        python -m scrapers.spiders.Sweden.PyTube.riks_tv.riks_tv_YT
     The first time this script is called after stating up a new UCloud session it will give the following message:
         Please open https://www.google.com/device and input code RJQ-YVM-HVF
         Press enter when you have completed this step.
