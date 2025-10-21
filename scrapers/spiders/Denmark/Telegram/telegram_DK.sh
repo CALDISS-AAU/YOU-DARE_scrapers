@@ -5,4 +5,4 @@ pip3 install telepathy
 pip3 install cryptg
 
 # things to get
-telepathy -t maniphestocore c- -r
+telepathy -t maniphestocore -c -r
