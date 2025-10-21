@@ -6,8 +6,8 @@ review/for-review
 *.csv
 *.jsonl
 *.m4a
-scrapers/logs
-scrapers/data
+logs
+data
 tree.html
 doccano/data
 *.ipynb_checkpo*
