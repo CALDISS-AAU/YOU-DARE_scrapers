@@ -8,7 +8,6 @@ from twisted.internet.defer import inlineCallbacks, returnValue
 from twisted.internet.threads import deferToThread
 from datetime import datetime
 from urllib.parse import urljoin
-import json
 # Internal imports #
 from ...items import ScrapersItem  # Imports the items from the items.py file
 from ...functions.scrapy_functions import Dynamic_Scrapy  # Custom shared functions
@@ -16,7 +15,7 @@ from ...functions.general_functions import General_Functions  # Custom shared fu
 
 ''' To run this spider pass the following to the terminal:
         cd ./YOU-DARE/scrapers
-        scrapy crawl gb_news_SPIDER_rerun -a max_scrolls=x # MUST MATCH SPIDER NAME!
+        scrapy crawl gb_news_SPIDER -a max_scrolls=x # MUST MATCH SPIDER NAME!
     where -a max_scrolls=x is an optional parameter
     OR
         cd ./YOU-DARE/scrapers
@@ -24,27 +23,12 @@ from ...functions.general_functions import General_Functions  # Custom shared fu
         nohup scrapy crawl gb_news_SPIDER > /work/YOU-DARE/scrapers/data/United_Kingdom/gb_news_SPIDER/gb_news_SPIDER_2025-09-03_SPIDER.log
 '''
 
-# READ COLLECTED ARTICLES
-data_p = "/work/YOU-DARE/scrapers/data/United_Kingdom/gb_news_v2_reduced_SPIDER/data_gb_news_v2_reduced_SPIDER.jl"
-
-collected_urls = []
-
-with open(data_p, "r") as f:
-    for line in f:
-        entry = json.loads(line)
-
-        article_url = entry.get('article_link')
-
-        if article_url:
-            collected_urls.append(article_url)
-
-
 ### CREATING THE SPIDER ###
 class DynamicSpider(scrapy.Spider): # Can be changed but it's not necessary - if changed also change Super in from_crawler function
-    name = 'gb_news_SPIDER_rerun' # Spider name - must be unique within given project
+    name = 'gb_news_SPIDER' # Spider name - must be unique within given project
     region = 'United_Kingdom' # Parent folder - used for folderstructure within the data folder - MUST BE IDENTICAL TO SPIDERS DIRECT PARENT FOLDER!
     source = 'GB news - opinion' # The source of the articles - NOT the author!
-    start_urls = collected_urls # The url where the content to be scraped is found - can be multiple urls IF THE CSS/XPATH IS IDENTICAL!
+    start_urls = ['https://www.gbnews.com/opinion/'] # The url where the content to be scraped is found - can be multiple urls IF THE CSS/XPATH IS IDENTICAL!
 
     ## HTML directions ##
     ''' These can be both CSS and XPath or a mix as long as it's matched within the response functions within the different parse functions.
@@ -109,13 +93,47 @@ class DynamicSpider(scrapy.Spider): # Can be changed but it's not necessary - if
         self.existing_data = Dynamic_Scrapy.load_existing_links(self.save_path) # See doc string
 
     ### THE ACTUAL SPIDER FUNCTIONALITY ###
+    @inlineCallbacks
     def parse(self, response): # Can't be renamed
+        # Renders the frontpage dynamically using Playwright inside a thread
+        url = response.url
+        rendered_page = yield deferToThread(
+            asyncio.run,
+            Dynamic_Scrapy.fetch_with_playwright_adaptive(
+                url,
+                self.articles_CSS,                # <-- 2nd arg is the selector
+                self.max_scrolls,
+                start_wait=1000,         # starts fast; will adapt upward
+                max_wait=60000
+            )
+        )        
+        sel = Selector(text=rendered_page)
 
-        sel = Selector(text=response.text)
-        item = self.parse_article(sel, response.url)
+        # Finds all article links
+        links = sel.css(self.links_to_follow_CSS).getall()
+        links = [urljoin(url, l) for l in links]
+
+        self.logger.info(f"Found {len(links)} article links on {url}")
+        for link in links:
+            self.logger.debug(f"Article link: {link}")
+
+        collected_items = []
         
-        if item:
-            yield item
+        for link in links:
+            if link in self.existing_data: # Only scrapes information for articles that have not yet been scraped
+                self.logger.info(f"Skipping duplicate article: {link}")
+                continue
+
+            # Fetch each article manually
+            article_page = yield deferToThread(asyncio.run, Dynamic_Scrapy.fetch_with_playwright(link, self.max_scrolls, wait_time=5000))
+            article_sel = Selector(text=article_page)
+
+            # Parse and yield the article
+            item = self.parse_article(article_sel, link) # Goes to each article and scrapes relevant information
+            if item: # If any information has been scraped the data is added to 'collected_items'
+                collected_items.append(item)
+        
+        returnValue(collected_items) # MUST!!! be 'returnValue' since scrapy can't catch data from '@inlineCallbacks' using 'yield'!!!
 
     def parse_article(self, response, article_link): # Can be renamed. IF IT IS REMEBER TO REDIRECT THE CALLBACK IN PARSE!
         items = ScrapersItem() # Makes the items from items.py accessable within this function
@@ -163,7 +181,7 @@ class DynamicSpider(scrapy.Spider): # Can be changed but it's not necessary - if
         items['embedded_media_links'] = embedded_med
         items['external_links'] = external_links
         items['other_items'] = 'None'
-        items['article_HTML'] = ''
+        items['article_HTML'] = response.get()
         
         
         self.logger.info(f"Scraped article: {article_title} ({article_link})") # Logs successful scrape
