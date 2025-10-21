@@ -1,8 +1,8 @@
-from ....functions.pytubefix_functions import Pytubefix_Functions
+from .....functions.pytubefix_functions import Pytubefix_Functions
 
 ''' To run this scraper from bash do the following:
         cd ./YOU-DARE/scrapers
-        python -m scrapers.spiders.France.PyTube.le_syndicat_de_la_famille_YT
+        python -m scrapers.spiders.France.PyTube.julien_rochedy.julien_rochedy_YT
     The first time this script is called after stating up a new UCloud session it will give the following message:
         Please open https://www.google.com/device and input code RJQ-YVM-HVF
         Press enter when you have completed this step.
@@ -11,12 +11,12 @@ from ....functions.pytubefix_functions import Pytubefix_Functions
 '''
 
 # The link to the channel of interest
-channel_url = 'https://www.youtube.com/@LeSyndicatdelaFamille/videos'
-source = 'Le Syndicat de le Famille YouTube'
+channel_url = 'https://www.youtube.com/@Julien.Rochedy/videos'
+# source = 'Iseul and Anne - Le Café des Antigones YouTube'
 
 # Generating the proper output path
-# generated_output_path = Pytubefix_Functions.generate_output_path(__file__)
+generated_output_path = Pytubefix_Functions.generate_output_path(__file__, nesting_level=5)
 
 # Generates a jsonlines file and downloads all audio from all videos and places it on the generated output path
-# Pytubefix_Functions.pytubefix_from_channel(channel_url, source, generated_output_path)
-Pytubefix_Functions.pytubefix_from_channel(channel_url, __file__)
+Pytubefix_Functions.pytubefix_from_channel(channel_url, __file__, nesting_level=5)
+# Pytubefix_Functions.pytubefix_from_channel_jsonlines(channel_url, generated_output_path)YOU-DARE/scrapers/scrapers/data/PyTube/marion_marechal_YT
