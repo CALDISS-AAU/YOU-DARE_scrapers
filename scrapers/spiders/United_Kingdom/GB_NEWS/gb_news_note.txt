@@ -1,0 +1,5 @@
+GB News is collected by:
+
+1. Running the gb_news_v2_reduced_SPIDER scraper. This spider was succesful in retrieving a large volume of links but had a sub-optimal parser.
+2. Running the gb_news_rerun-urls-from-v2 scraper. This scraper uses the URLs from 1 as start URLs and uses a different parser.
+3. As 2 yielded duplicates, data is finally de-duplicated using the script gb_news_deduplicate.py
