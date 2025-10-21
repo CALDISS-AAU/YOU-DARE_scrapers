@@ -171,6 +171,13 @@ class StaticSpider(scrapy.Spider): # Can be changed but it's not necessary - if 
         items['external_links'] = external_links
         items['article_HTML'] = article_HTML
 
+
+
+
+
+
+
+
         self.existing_links.add(article_link) # Adds article to list of scraped articles just in case multiple links from the front page directs to this article
 
         yield items # Writes the items to the FEEDS function in the settings.py file hence saving them

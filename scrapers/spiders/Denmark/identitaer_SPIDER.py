@@ -141,8 +141,11 @@ class StaticSpider(scrapy.Spider): # Can be changed but it's not necessary - if 
         items['article_text'] = article_text_clean
         items['image_links'] = image_links
         items['external_links'] = external_links
-        items['youtube_links'] = youtube_links
+        items['embedded_media_links'] = youtube_links
         items['article_HTML'] = article_HTML
+        items['article_categories']  = 'None'
+        items['other_items'] = 'None'
+        items['author'] = 'None'
 
         self.existing_links.add(article_link) # Adds article to list of scraped articles just in case multiple links from the front page directs to this article
 
