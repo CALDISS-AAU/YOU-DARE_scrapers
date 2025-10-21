@@ -1,9 +1,9 @@
-from ....functions.pytubefix_functions import Pytubefix_Functions
+from .....functions.pytubefix_functions import Pytubefix_Functions
 from datetime import date
 
 ''' To run this scraper from bash do the following:
         cd ./YOU-DARE/scrapers
-        python -m scrapers.spiders.Italy.PyTube.yasmin_pani_YT
+        python -m scrapers.spiders.Italy.PyTube.essere_uomo.essere_uomo_YT
     The first time this script is called after stating up a new UCloud session it will give the following message:
         Please open https://www.google.com/device and input code RJQ-YVM-HVF
         Press enter when you have completed this step.
@@ -17,7 +17,7 @@ parse_partial_date uses dateparser, hence "2020" will be read as "2020-01-01" an
 # to_date = Pytubefix_Functions.parse_partial_date("2018")
 
 # The link to the channel of interest
-channel_url = 'https://www.youtube.com/@YasminaPani/videos'
+channel_url = 'https://www.youtube.com/@EssereUomo/videos'
 # Generates a jsonlines file and downloads all audio from all videos and places it on the generated output path
-output_path = Pytubefix_Functions.pytubefix_from_channel(channel_url, __file__)#, from_date=from_date, to_date=to_date)
+output_path = Pytubefix_Functions.pytubefix_from_channel(channel_url, __file__, nesting_level=5)#, from_date=from_date, to_date=to_date)
 Pytubefix_Functions.retry_failed_downloads(output_path)
