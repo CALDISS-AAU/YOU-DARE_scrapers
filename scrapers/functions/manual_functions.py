@@ -66,8 +66,6 @@ class Manual_Functions:
         except Exception as e:
             print(f'Failed to save data. Error: {e}')
 
-
-
     @staticmethod
     def telegram_to_threads(telegram_source, post_csv_path, replies_csv_path=None, sep=';'):
         ## 1) Read data

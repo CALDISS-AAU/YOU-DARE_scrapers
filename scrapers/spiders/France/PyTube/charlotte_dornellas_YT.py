@@ -2,7 +2,7 @@ from ....functions.pytubefix_functions import Pytubefix_Functions
 
 ''' To run this scraper from bash do the following:
         cd ./path/to/YOU-DARE_scrapers-folder
-        python -m scrapers.spiders.France.PyTube.le_raptor_YT
+        python -m scrapers.spiders.France.PyTube.charlotte_dornellas_YT
     The first time this script is called after stating up a new UCloud session it will give the following message:
         Please open https://www.google.com/device and input code ABC-DEF-GHI
         Press enter when you have completed this step.
@@ -11,7 +11,7 @@ from ....functions.pytubefix_functions import Pytubefix_Functions
 '''
 
 # The link to the channel of interest
-channel_url = 'https://www.youtube.com/@LeRaptor/videos'
+channel_url = 'https://www.youtube.com/@ChdOrnellas/videos'
 
 # Generates a jsonlines file and downloads all audio from all videos and deposits it on the generated output path
 output_path = Pytubefix_Functions.pytubefix_from_channel(

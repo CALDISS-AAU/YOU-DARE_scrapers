@@ -1,15 +1,3 @@
-pandas
-numpy
-pysbd
-tqdm
-spacy
-transformers
-plotly==5.24.1
-sentence-transformers
-matplotlib
-jsonlines
-dateparser
-
 # For crawlers in scrapy
 scrapy
 scrapy_playwright
@@ -18,5 +6,9 @@ scrapy_playwright
 playwright
 
 # For scrapers using pytube
-# pytube
 pytubefix
+dateparser
+jsonlines
+
+# For scrapers using yt-dlp
+yt-dlp

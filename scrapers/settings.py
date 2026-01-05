@@ -19,7 +19,6 @@ SPIDER_MODULES = [
     "scrapers.spiders.Spain", 
     "scrapers.spiders.Sweden", 
     "scrapers.spiders.United_Kingdom",
-    "scrapers.spiders.ZZ_Examples"
     ]
 NEWSPIDER_MODULE = "scrapers.spiders"
 

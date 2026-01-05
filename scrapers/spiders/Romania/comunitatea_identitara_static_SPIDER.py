@@ -9,20 +9,24 @@ from ...functions.scraper_functions.general_functions import General_Functions  
 
 ''' To run this spider pass the following to the terminal:
         cd ./path/to/YOU-DARE_scrapers-folder
-        scrapy crawl template_static_SPIDER -a max_pages=x # MUST MATCH SPIDER NAME!
+        scrapy crawl comunitatea_identitara_SPIDER -a max_pages=x # MUST MATCH SPIDER NAME!
     where -a max_pages=x is an optional parameter to limit the number of pages to render more front pages containing more articles from the start_url
     OR
         cd ./path/to/YOU-DARE_scrapers_folder
-        mkdir -p ./path/to/spider-data/Template/template_static_SPIDER # If the folder does not yet exist
-        nohup scrapy crawl template_static_SPIDER -a max_pages=1 > ./path/to/spider-data/Template/template_static_SPIDER/template_static_SPIDER_$(date +%F).log
+        mkdir -p ./data/Romania/comunitatea_identitara_SPIDER # If the folder does not yet exist
+        nohup scrapy crawl comunitatea_identitara_SPIDER -a max_pages=1 > ./data/Romania/comunitatea_identitara_SPIDER/comunitatea_identitara_SPIDER_$(date +%F).log
 '''
 
 ### CREATING THE SPIDER ###
-class StaticSpider(scrapy.Spider): 
-    name = 'template_static_SPIDER' # Spider name - used when calling the spider - must be unique within given project (for uniformity use {source}_static_SPIDER)
-    region = 'Template' # Parent folder - used for folderstructure within the data folder - must be the country of the source
-    source = '' # The source name - must be the actor of the website(s)
-    start_urls = ['https://quotes.toscrape.com/'] # List of all start_urls for the spider 
+class StaticSpider(scrapy.Spider): # Can be changed but it's not necessary - if changed also change Super in from_crawler function
+    name = 'comunitatea_identitara_SPIDER' # Spider name - must be unique within given project
+    region = 'Romania' # Parent folder - used for folderstructure within the data folder - MUST BE IDENTICAL TO SPIDERS DIRECT PARENT FOLDER!
+    source = 'Comunitatea Identitara' # The base source name - each keyword will be appended to this
+    start_urls = [
+        'https://comunitateaidentitara.com/category/blog',
+        'https://comunitateaidentitara.com/category/actiuni',
+        'https://comunitateaidentitara.com/category/podcast'
+    ] 
 
     ## HTML directions ##
     ''' These can be both CSS and XPath or a mix as long as it's matched within the response functions within the different parse functions.
@@ -37,19 +41,20 @@ class StaticSpider(scrapy.Spider):
             links_to_follow # The links to the individual articles
             next_page # The links to the next page (if the next page is fetchable)
     '''
-    links_to_follow_CSS = 'article a::attr(href)'
-    next_page_CSS = '.next-page a::attr(href)'
+    article_CSS = 'article.item-list'
+    links_to_follow_CSS = '.post-box-title a::attr(href)'
+    publication_date_CSS = '.item-list p span::text'
+    next_page_CSS = 'div.pagination span#tie-next-page a::attr(href)'
     # FROM THE ARTICLE PAGE!!!
     ''' CSS or XPath queries for relevant information found on the individual article pages.
     '''
-    article_title_CSS = 'h1 *::text'
-    publication_date_CSS = '.published *::text'
-    author_CSS = '.author *::text'
-    article_categories_CSS = '.category *::text'
-    article_text_CSS = '.content p *::text'
-    image_links_CSS = '.content img::attr(src)'
-    embedded_media_links_CSS = '.content iframe::attr(src)'
-    links_in_text_CSS = '.content p a::attr(href)'
+    article_title_CSS = 'h1.post-title span::text'
+    author_CSS = None
+    article_categories_CSS = '.post-tag a::text'
+    article_text_CSS = '.entry *::text'
+    image_links_CSS = 'div.entry img::attr(src)'
+    embedded_media_links_CSS = 'iframe::attr(src), video.wp-video-shortcode::attr(src), video.wp-video-shortcode source::attr(src), video.wp-video-shortcode a::attr(href)'
+    links_in_text_CSS = 'div.entry p a::attr(href), div.entry h1 a::attr(href)'
     other_items = None
 
     ### IMPORTANT FUNCTIONS FOR SETUP THAT CANNOT BE OMITTED AND PARAMETERS SHOULD NOT BE CHANGED! ###
@@ -68,7 +73,7 @@ class StaticSpider(scrapy.Spider):
     def open_spider(self, spider):
         """Executes setup actions when the spider is opened."""
         self.logger.info("open_spider() is running!")
-        self.existing_links = Static_Scrapy.load_existing_links(self.save_file, self.logger) # See doc string
+        self.existing_links = Static_Scrapy.load_existing_links(self.save_file) # See doc string
 
     ### THE ACTUAL SPIDER FUNCTIONALITY ###
     async def start(self):
@@ -81,11 +86,13 @@ class StaticSpider(scrapy.Spider):
 
     def parse_front(self, response): # Can be renamed. IF IT IS REMEBER TO REDIRECT THE CALLBACK IN START_REQUESTS!
         current_page = response.meta['current_page'] # Saves 'current_page' from start_request
+        articles = response.css(self.article_CSS)
+
         # Finds and follows article links 
-        links = response.css(self.links_to_follow_CSS).getall() # Gets all article links
-        links = [response.urljoin(l) for l in links if l] 
-        
-        for link in links:
+        for article in articles:
+            link = article.css(self.links_to_follow_CSS).get() # Gets all article links 
+            link = response.urljoin(link)
+            pub_date = article.css(self.publication_date_CSS).get() # Get all dates
             if link in self.existing_links: # Only scrapes information from the front page for articles that has not yet been scraped - can be removed if only the link is found from the front page
                 self.logger.info(f"Skipping duplicate article: {link}")
                 continue
@@ -95,6 +102,7 @@ class StaticSpider(scrapy.Spider):
                 callback=self.parse_article, # Calls parse_article on each link
                 meta={
                     'article_link': link, # Sends the link to parse_article so that it can be stored as an item. To also send e.g. the 'publication_date' simply add it here!
+                    'publication_date' : pub_date
                 }
             )
 
@@ -104,10 +112,10 @@ class StaticSpider(scrapy.Spider):
         if next_page_url: # Only go to the next page if the page is not None
             yield next_page_url
 
-    def parse_article(self, response): # Can be renamed. IF IT IS REMEBER TO REDIRECT THE CALLBACK IN PARSE_FRONT!        
+    def parse_article(self, response): # Can be renamed. IF IT IS REMEBER TO REDIRECT THE CALLBACK IN PARSE_FRONT!
         # Extract 'scrape_date'
         timestamp = datetime.now().strftime('%Y-%m-%d')
-        # Extract 'source'
+        # Extract 'source' 
         source = self.source
         # Extract 'article_link' from parse_front
         article_link = response.meta['article_link'] 
@@ -121,9 +129,9 @@ class StaticSpider(scrapy.Spider):
         else: 
             article_title_clean = article_title
         # Extract 'publication_date' 
-        publication_date = response.css(self.publication_date_CSS).get()
+        publication_date = response.meta['publication_date']
         # Extract 'author' 
-        author_clean = response.css(self.author_CSS).get()
+        author_clean = self.author_CSS
         # Extract 'article_categories' 
         article_categories = response.css(self.article_categories_CSS).getall()
         # Extract 'article_text'
@@ -137,7 +145,7 @@ class StaticSpider(scrapy.Spider):
         links_in_text = response.css(self.links_in_text_CSS).getall()
         # Extract 'other_items' 
         other_items = self.other_items
-        # Extract 'article_HTML'
+        # Extract 'article_HTML' 
         article_HTML = response.text
 
         items = ScrapersItem() # Makes the items from items.py accessable within this spider for every single article
