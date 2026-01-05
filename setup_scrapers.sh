@@ -6,8 +6,12 @@
 pip install --upgrade pip # opgraderer pip
 
 # OBS! Nedenstående linje skal rettes så stien passer med projektet
-pip install -r /work/YOU-DARE/scrapers/requirements_scrapers.txt
+pip install -r /work/JosefineMarianneChristensen#0406/YOU-DARE/YOU-DARE_scrapers/requirements_scrapers.txt
 
 # playwright stuff
+playwright install
 playwright install-deps # webdriver drivers for driving
-playwright install --with-deps chromium
+
+# yt-dlp stuff
+npm install
+npx tsc
