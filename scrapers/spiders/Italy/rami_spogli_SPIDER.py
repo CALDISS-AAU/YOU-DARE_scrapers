@@ -13,17 +13,17 @@ from ...functions.general_functions import General_Functions  # Custom shared fu
 ''' THIS SPIDER IS NOT ABLE TO RUN!
     To run this spider pass the following to the terminal:
         cd ./YOU-DARE/scrapers
-        scrapy crawl mallard_SPIDER -a max_pages=x # MUST MATCH SPIDER NAME!
+        scrapy crawl rami_spogli_SPIDER -a max_pages=x # MUST MATCH SPIDER NAME!
     where -a max_pages=x is an optional parameter
     nohup scrapy crawl steve_laws_SPIDER -a max_pages=1 > /work/YOU-DARE/scrapers/data/United_Kingdom/steve_laws_SPIDER/steve_laws_SPIDER_$(date +%F)_SPIDER.log
 '''
 
 ### CREATING THE SPIDER ###
-class WaybacksteveSpider(scrapy.Spider): # Can be changed but it's not necessary - if changed also change Super in from_crawler function
-    name = 'steve_laws_SPIDER' # Spider name - must be unique within given project
-    region = 'United_Kingdom' # Parent folder - used for folderstructure within the data folder - MUST BE IDENTICAL TO SPIDERS DIRECT PARENT FOLDER!
-    source = 'Steve Laws Report' # The source of the articles - NOT the author!
-    start_urls = ['https://stevelawsreport.co.uk/'] # The url where the content to be scraped is found - can be multiple urls IF THE CSS/XPATH IS IDENTICAL!
+class StaticSpider(scrapy.Spider): # Can be changed but it's not necessary - if changed also change Super in from_crawler function
+    name = 'rami_spogli_SPIDER' # Spider name - must be unique within given project
+    region = 'Italy' # Parent folder - used for folderstructure within the data folder - MUST BE IDENTICAL TO SPIDERS DIRECT PARENT FOLDER!
+    source = 'I Rami Spogli' # The source of the articles - NOT the author!
+    start_urls = ['https://www.ramispogli.it/', 'https://www.ramispogli.it/page/2/', 'https://www.ramispogli.it/page/3/'] # The url where the content to be scraped is found - can be multiple urls IF THE CSS/XPATH IS IDENTICAL!
 
     items = ScrapersItem() # Makes the items from items.py accessable within this spider
     save_path = f"./data/{region}/{name}/data_{name}.jl"
@@ -39,19 +39,20 @@ class WaybacksteveSpider(scrapy.Spider): # Can be changed but it's not necessary
             next_page # The links to the next page
         How to pass information from the parse_front function to the parse_article function will be described in greater detail later on.
     '''
-    links_to_follow_XPATH = '/html/body//div/h2/a/@href'
-    next_page_XPATH = '//section/div/div[2]/a[2]/@href'
+    links_to_follow_XPATH = '//article/header/h2/a/@href'
+    # next_page_XPATH = '//section/div/div[2]/a[2]/@href'
     # FROM THE ARTICLE PAGE!!!
     ''' CSS or XPath queries for relevant information found on the individual article pages.
         These can obviously be omittet if all relevant information can be scraped from the front page, in which case parse_article should be disabled.
     '''
-    article_title_XPATH = '//h1[contains(@class, "entry-title")]/text()'
+    article_title_XPATH = '//article/header/h1/text()'
+    author_XPATH = '//article/footer/span[1]/span[2]/a/text()'
     # '//div/h1[@class="entry-title fusion-responsive-typography-calculated"]/text()'
-    article_text_XPATH = '//div[contains(@class, "post-content")]//p//text()'
-    publication_date_XPATH = '//article/div[3]/div/span[3]/text()'
-    image_links_XPATH = '//article/div[1]/ul/li/a/img/@src'
-    external_links_XPATH = '//article/div[2]/p/a/@href'
-    article_categories_XPATH = '//article/div[3]/div/span[6]/a/text()'
+    article_text_XPATH = '//main/article/div[2]//text()'
+    publication_date_XPATH = '//article/footer/span[2]/a/time[1]/text()'
+    image_links_XPATH = '//main/article/div/div/figure/img/@src'
+    external_links_XPATH = '//article/div/p/a/@href'
+    article_categories_XPATH = '//footer/span[4]/a/text()'
     embedded_media_links_XPATH = '//iframe[contains(@src, "youtube.com") or contains(@src, "vimeo.com")]/@src'
     # ... other queries
 
@@ -63,7 +64,7 @@ class WaybacksteveSpider(scrapy.Spider): # Can be changed but it's not necessary
 
     @classmethod
     def from_crawler(cls, crawler, *args, **kwargs):
-        spider = super(WaybacksteveSpider, cls).from_crawler(crawler, *args, **kwargs)
+        spider = super(StaticSpider, cls).from_crawler(crawler, *args, **kwargs)
         crawler.signals.connect(spider.open_spider, signal=signals.spider_opened)
         return spider
 
@@ -74,18 +75,13 @@ class WaybacksteveSpider(scrapy.Spider): # Can be changed but it's not necessary
         
 
     ### THE ACTUAL SPIDER FUNCTIONALITY ###
-    def start_requests(self):
-        timestamp = '20250803092414'
-        self.logger.info("Starting requests from Wayback Machine")
-
+    def start_requests(self): # Can't be renamed
+        """ Parses all urls from start_url to the parse_front function. """
         for url in self.start_urls:
-            wayback_url = f'https://web.archive.org/web/{timestamp}/{url}'
-            self.logger.info(f"Generating request for: {wayback_url}")
-
             yield scrapy.Request(
-                url=wayback_url,
-                callback=self.parse_front,
-                meta={'current_page': 1}
+                url=url,
+                callback=self.parse_front, # Calls parse_front on each url
+                meta={'current_page': 1} # Information sent to parse_front
             )
 
     def parse_front(self, response): # Can be renamed. IF IT IS REMEBER TO REDIRECT THE CALLBACK IN START_REQUESTS!

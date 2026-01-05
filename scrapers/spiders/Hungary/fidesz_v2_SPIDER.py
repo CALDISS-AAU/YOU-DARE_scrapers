@@ -21,7 +21,7 @@ from ...functions.general_functions import General_Functions  # Custom shared fu
     OR
         cd ./YOU-DARE/scrapers
         mkdir -p /work/YOU-DARE/scrapers/data/Hungary/fidesz_hirek_v2_SPIDER # If the folder does not yet exist
-        nohup scrapy crawl fidesz_hirek_v2_SPIDER > /work/YOU-DARE/scrapers/data/Hungary/fidesz_hirek_v2_SPIDER/fidesz_hirek_SPIDER_2025-09-02_SPIDER.log
+        nohup scrapy crawl fidesz_hirek_v2_SPIDER > /work/YOU-DARE/scrapers/data/Hungary/fidesz_hirek_v2_SPIDER/fidesz_hirek_SPIDER_2025-10-30_SPIDER.log
 '''
 
 ### CREATING THE SPIDER ###

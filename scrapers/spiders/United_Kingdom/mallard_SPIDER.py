@@ -15,11 +15,12 @@ from ...functions.general_functions import General_Functions  # Custom shared fu
         cd ./YOU-DARE/scrapers
         scrapy crawl mallard_SPIDER -a max_pages=x # MUST MATCH SPIDER NAME!
     where -a max_pages=x is an optional parameter
+    nohup scrapy crawl mallard_SPIDER_TEST -a max_pages=1 > /work/YOU-DARE/scrapers/data/United_Kingdom/mallard_SPIDER/mallard_SPIDER_TEST_$(date +%F)_SPIDER.log
 '''
 
 ### CREATING THE SPIDER ###
 class StaticSpider(scrapy.Spider): # Can be changed but it's not necessary - if changed also change Super in from_crawler function
-    name = 'mallard_SPIDER' # Spider name - must be unique within given project
+    name = 'mallard_SPIDER_TEST' # Spider name - must be unique within given project
     region = 'United_Kingdom' # Parent folder - used for folderstructure within the data folder - MUST BE IDENTICAL TO SPIDERS DIRECT PARENT FOLDER!
     source = 'The Mallard' # The source of the articles - NOT the author!
     start_urls = ['https://mallarduk.com/category/{}/'] # The url where the content to be scraped is found - can be multiple urls IF THE CSS/XPATH IS IDENTICAL!
