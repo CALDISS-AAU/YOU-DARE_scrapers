@@ -1,15 +1,10 @@
 #!/usr/bin/env bash
 
-# Denne fil skal køres, når man starter job på UCloud. Den installerer miljøet/pakkerne, som bruges i projektet
-
-## installerer python pakker
+## install python stuff
 pip install --upgrade pip # opgraderer pip
 
-# OBS! Nedenstående linje skal rettes så stien passer med projektet
-pip install -r /work/YOU-DARE/scrapers/requirements_snapshot.txt
-#/work/YOU-DARE/scrapers/requirements_scrapers.txt
-#/work/YOU-DARE/environment/requirements.txt
-#/work/YOU-DARE/scrapers/requirements_snapshot.txt
+# packages
+pip install -r requirements.txt
 
 # playwright stuff
 playwright install
