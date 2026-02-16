@@ -163,8 +163,7 @@ class DynamicSpider(scrapy.Spider):  # Can be changed but it's not necessary - i
         article_text_bits = response.xpath(self.article_text_XPATH).getall()
         article_text_clean = General_Functions.join_and_clean(article_text_bits)
         # Extract 'image_links' 
-        image_links_raw = response.css(self.image_links_CSS).getall()
-        image_links = [General_Functions.safe_urljoin(article_link, src) for src in image_links_raw]
+        image_links = response.css(self.image_links_CSS).getall()
         # Extract 'embedded_media_links' 
         embedded_media_links = self.embedded_media_links_CSS
         # Extract 'links_in_text' 

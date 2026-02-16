@@ -23,7 +23,7 @@ from ...functions.scraper_functions.general_functions import General_Functions  
  
 ### CREATING THE SPIDER ###
 class DynamicSpider(scrapy.Spider): # Can be changed but it's not necessary - if changed also change Super in from_crawler function
-    name = 'cultura_vietii_SPIDER' # Spider name - must be unique within given project
+    name = 'cultura_vietii_SPIDER_TEST' # Spider name - must be unique within given project
     region = 'Romania' # Parent folder - used for folderstructure within the data folder - MUST BE IDENTICAL TO SPIDERS DIRECT PARENT FOLDER!
     source = 'Cultura Vietii' # The source of the articles - NOT the author!
     start_url_template = "https://www.culturavietii.ro/{}"

@@ -58,7 +58,7 @@ class DynamicSpider(scrapy.Spider): # Can be changed but it's not necessary - if
     publication_date_CSS = 'time.entry-date.date.updated[itemprop="datePublished"]::attr(datetime)'
     author_CSS = 'div.wrapper-inner li.the_author'
     article_categories_CSS = '.category.span.tax-title::text'
-    article_text_CSS = 'div.col-sm-11.col-sm-push-1.content p *::text'
+    article_text_CSS = 'div.col-sm-11.col-sm-push-1.content h2 *::text, div.col-sm-11.col-sm-push-1.content p *::text'
     image_links_CSS = '#article img::attr(src)'
     embedded_media_links_CSS = None
     links_in_text_CSS = '.external *::attr(href)'

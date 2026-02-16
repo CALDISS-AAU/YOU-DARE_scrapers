@@ -5,6 +5,8 @@ import os
 import pandas as pd
 from os.path import join
 from pathlib import Path
+import pathlib
+import shutil
 import re
 
 class Manual_Functions:
@@ -40,7 +42,7 @@ class Manual_Functions:
         return jl_path
 
     @staticmethod
-    def telegram_to_jl(csv_path):
+    def telegram_to_jl(csv_path, source):
         if not os.path.isfile(csv_path):
             raise FileNotFoundError(f"File not found: {csv_path}")
 
@@ -58,6 +60,7 @@ class Manual_Functions:
                 reader = csv.DictReader(infile, delimiter=';')
 
                 for row in reader:
+                    row['source'] = source
                     json.dump(row, outfile, ensure_ascii=False)
                     outfile.write("\n")
 
@@ -67,11 +70,11 @@ class Manual_Functions:
             print(f'Failed to save data. Error: {e}')
 
     @staticmethod
-    def telegram_to_threads(telegram_source, post_csv_path, replies_csv_path=None, sep=';'):
+    def telegram_to_threads(post_csv_path, replies_csv_path=None, sep=';', source=None):
         ## 1) Read data
-        posts_df = pd.read_csv(post_csv_path, sep=sep)
+        posts_df = pd.read_csv(post_csv_path, sep=sep, engine='python', on_bad_lines='skip')
         try:
-            replies_df = pd.read_csv(replies_csv_path, sep=sep) if replies_csv_path else None
+            replies_df = pd.read_csv(replies_csv_path, sep=sep, engine='python', on_bad_lines='skip') if replies_csv_path else None
         except FileNotFoundError:
             replies_df = None
             print(f"There are no replies found for this post")
@@ -97,8 +100,8 @@ class Manual_Functions:
                 "Thread_text": "",
                 "URL": post.get("URL", ""),
                 "Timestamp": str(post.get("Timestamp", "")),
-                "Display-name": post.get("Display_name", ""), 
-                "Source" : telegram_source
+                "Display-name": post.get("Display_name", ""),
+                "source" : source
             }
 
             ##4) Add one post at a time to the threads. 
@@ -134,69 +137,135 @@ class Manual_Functions:
         print(f"saved {len(threads)} threads to {out_path}")
         return out_path
 
-
-
-
-
-
-
-
-
-
-
-
-
+    #### Data standard ####
+    @staticmethod
+    def get_all_dataset_paths(data_directory):
+        list_of_all_other_datasets = []
+        list_of_datasets_SPIDER = list(pathlib.Path(data_directory).rglob('*_SPIDER.jl'))
+        list_of_datasets_MANUAL = list(pathlib.Path(data_directory).rglob('*_MANUAL.jl'))
+        list_of_datasets_YT = list(pathlib.Path(data_directory).rglob('*_YT.jl'))
+        list_of_datasets_TELEGRAM = list(pathlib.Path(data_directory).rglob('*_TELEGRAM.jl'))
+        list_of_all_other_datasets = list_of_datasets_MANUAL + list_of_datasets_YT + list_of_datasets_TELEGRAM
+        list_of_datasets_SPIDER = list(map(str, list_of_datasets_SPIDER))
+        list_of_all_other_datasets = list(map(str, list_of_all_other_datasets))
+        return list_of_datasets_SPIDER, list_of_all_other_datasets
 
     @staticmethod
-    def standartize_dataset(source, source_entry_given): 
+    def copy_file(input_path, output_path):
+        src = Path(input_path)
+        dst = Path(output_path)
 
+        if not src.exists():
+            raise FileNotFoundError(f"{src} does not exist")
+
+        dst.parent.mkdir(parents=True, exist_ok=True)
+
+        shutil.copyfile(src, dst)
+
+    @staticmethod
+    def standartize_dataset(data_path, output_path): 
         '''Standartize json lines dataset. Keys have to have a specific order. Also author cant be "none" "no author", but has to have a None value. also other_it, article_cat, and embedded_med_link cant be "none", "nothing else" or []. They must have None as value.'''
-
         #STEP 1) Read dataset and set up standart item order. If entry not found, add it with 'null' value. Author with value "None" or "no author" needs to have None value
-        desired_key_order = ['scrape_date', 'source', 'article_link', 'article_title', 'publication_date', 'author', 
-        'article_categories', 'article_text', 'image_links', 'embedded_media_links', 'links_in_text', 'other_items', 'article_HTML', 'mediatype']
+        desired_key_order_article = [
+            'scrape_date',
+            'source',
+            'article_link',
+            'article_title',
+            'publication_date',
+            'author',
+            'article_categories',
+            'article_text',
+            'image_links',
+            'embedded_media_links',
+            'links_in_text',
+            'other_items',
+            'article_HTML'
+        ]
 
-
-        
-
+        desired_key_order_flashback = [
+            'scrape_date',
+            'source',
+            'post_link',
+            'post_title',
+            'publication_date',
+            'post_author',
+            'categories',
+            'thread_text',
+            'image_links',
+            'embedded_media_links',
+            'links_in_text',
+            'other_items',
+            'post_HTML'
+        ]
 
         stuff_to_be_replaced = {"none", "null", "nothing else"}
-        author_that_needs_replacement = {"no author"}
+        author_that_needs_replacement = {"no author", "none", "null"}
 
-        dataset = Path(source)
+        #helper functions 
+        def values_to_be_changed(value, none_words): #Checking whether entry has "none" "nothing else" "null"
+            if not isinstance(value, str): #If the value of an entry is not a string, we return false
+                return False
+            else:
+                value = value.strip().lower() #if value is a string remove space, and make it lower
+                return value in none_words  #check if the word is in the defined set, and if yes return True or False
+
+        def set_value_to_none(article, key, incorrect_words): #Fix article_categories, embedded_media_links, other_items
+            v = article.get(key)
+            if values_to_be_changed(value=v, none_words=incorrect_words):
+                article[key] = None
+
+        def apply_subtitle_into_article_text(article):
+            sub = article.get("article_sub_title")
+            if isinstance(sub, str):
+                sub = sub.strip()
+                if sub and not values_to_be_changed(sub, stuff_to_be_replaced):
+                    text = article.get("article_text")
+                    if isinstance(text, str) and text.strip():
+                        text_clean = text.lstrip()
+                        if not text_clean.startswith(sub):
+                            article["article_text"] = f"{sub}\n{text_clean}"
+                    else:
+                        article["article_text"] = sub
+            article.pop("article_sub_title", None)
+
+        def pack_references_into_other_items(article):
+            refs = article.get("references_text")
+            if isinstance(refs, list):
+                refs_clean = [r.strip() for r in refs if isinstance(r, str) and r.strip()]
+            else:
+                refs_clean = []
+            if refs_clean:
+                article["other_items"] = {"references_text": refs_clean}
+            else:
+                article["other_items"] = None
+            article.pop("references_text", None)
+
+        def is_flashback_article(obj):
+            v = obj.get("post_link")
+            return isinstance(v, str) and v.strip() and v.strip().lower() not in stuff_to_be_replaced
+
+        def detect_dataset_is_flashback(lines):
+            for ln in lines:
+                try:
+                    obj = json.loads(ln)
+                except json.JSONDecodeError:
+                    continue
+                return is_flashback_article(obj)
+            return False
+
+        dataset = Path(data_path)
 
         if not dataset.exists(): 
-            raise FileNotFoundError(f"Path {source} does not exist")
+            raise FileNotFoundError(f"Path {data_path} does not exist")
 
         #READ the dataset:
         data = dataset.read_text(encoding="utf-8").strip()
         json_lines = [j.strip() for j in data.split("\n") if j.strip()] #reading the given json line
 
+        is_flashback = detect_dataset_is_flashback(json_lines)
+        desired_key_order = desired_key_order_flashback if is_flashback else desired_key_order_article
+
         articles_standartized = []
-
-        #helper functions 
-        def values_to_be_changed(value, none_words): #Checking wether entry has "none" "nothing else" "null"
-
-                if not isinstance(value, str): #If the value of an entry is not a string, we return false
-                    return False
-                else:
-                    value = value.strip().lower() #if value is a string remove space, and make it lower
-                    return value in none_words  #check if the word is in the defined set, and if yes return True or False
-
-        def set_value_to_none(article, key, incorrect_words): #Fix article_categories, embedded_media_links, other_items
-            v = article.get(key)
-
-            if values_to_be_changed(value=v, none_words=incorrect_words):
-                article[key] = None
-
-        #Helper function for mediatype
-
-        def media(article):
-            types = ["SPIDER.jl", "YT.jl", "TELEGRAM.jl"]
-            for n in types:
-                if source.endswith(n):
-                    article["mediatype"] = n.lower()[:-3]
-                    return article
 
         #Looping through the lines
         for line_number, line in enumerate(json_lines, start=1):
@@ -209,90 +278,67 @@ class Manual_Functions:
             for key in desired_key_order: #adding keys that are not present from desired key order in article with None value 
                 article.setdefault(key, None)
 
+            pack_references_into_other_items(article)
+            if not is_flashback:
+                apply_subtitle_into_article_text(article)
 
-            #Add media type:
-
-            media(article)
-
-            #Apply to author
-            author = article.get("author")
+            #Apply to author (author vs post_author) + publication_date
+            author_key = "post_author" if is_flashback else "author"
+            author_val = article.get(author_key)
             publication_date = article.get("publication_date")
-            if values_to_be_changed(author, author_that_needs_replacement) :
-                article["author"] = None
-            if values_to_be_changed(publication_date, stuff_to_be_replaced ):
+            if values_to_be_changed(author_val, author_that_needs_replacement):
+                article[author_key] = None
+            if values_to_be_changed(publication_date, stuff_to_be_replaced):
                 article["publication_date"] = None
 
-            article_source = article.get("source")
-            if article_source:
-                article["source"] = source_entry_given
-            
+
             #Change external_links to links_in text
             external_links = article.pop('external_links', None) #return None value if key does not exist
             if external_links:
                 article["links_in_text"] = external_links
 
+            youtube_links = article.pop('youtube_links', None)
+            if youtube_links:
+                article['embedded_media_links'] = youtube_links
+
+            if not is_flashback:
+                categories = article.pop("categories", None)
+                themes = article.pop("themes_text", None)
+
+                merged = []
+                if isinstance(categories, list):
+                    merged.extend(categories)
+                if isinstance(themes, list):
+                    merged.extend(themes)
+
+                article["article_categories"] = merged if merged else None
 
             #Apply to article_categories, other_item, embedded_media:links
             set_value_to_none(article, "other_items", stuff_to_be_replaced)
-            set_value_to_none(article, "article_categories", stuff_to_be_replaced)
+            set_value_to_none(article, "image_links", stuff_to_be_replaced)
+            if is_flashback:
+                set_value_to_none(article, "categories", stuff_to_be_replaced)
+            else:
+                set_value_to_none(article, "article_categories", stuff_to_be_replaced)
             set_value_to_none(article, "embedded_media_links", stuff_to_be_replaced)
             set_value_to_none(article, "links_in_text", stuff_to_be_replaced)
 
-       
+            if is_flashback:
+                for k in ("article_link","article_title","author","article_categories","article_text","article_HTML","article_sub_title"):
+                    article.pop(k, None)
+            else:
+                for k in ("post_link","post_title","post_author","categories","thread_text","post_HTML"):
+                    article.pop(k, None)
+
             # Reorder and save given file
             reordered_article = {key: article[key] for key in desired_key_order}
             articles_standartized.append(reordered_article)
         
-        with dataset.open("w", encoding="utf-8") as f: #save it as it was - get rid of the list [] arround it
+        # Save standardised dataset
+        with open(output_path, "w", encoding="utf-8") as f:
             for article in articles_standartized:
                 f.write(json.dumps(article, ensure_ascii=False))
                 f.write("\n")   
         
         #new_name = dataset.with_name(dataset.name + "standartized")
         #os.rename(dataset, new_name)
-    
-    
-    
-    
-    
-    @staticmethod
-    def mediatype_for_tel_and_yt(dir_path): #THIS IS FOR TELEGRAM + YT FOLERS
-    
-        #Folderpath
-        directory_path = Path(dir_path)
-
-        if not directory_path.exists(): 
-            raise FileNotFoundError(f"Path {directory_path} does not exist")
-
-    
-
-
-        for file_path in directory_path.glob("*.jl"):
-            filename = file_path.name.lower()
-
-            if filename.endswith("yt.jl"):
-                mediatype = "youtube"
-            elif filename.endswith("telegram.jl"):
-                mediatype = "telegram"
-            else:
-                continue ##SKIP OVER SPIDERS - THEY are done already
-
-            #READ the dataset:
-            data = file_path.read_text(encoding="utf-8").strip()
-            json_lines = [j.strip() for j in data.split("\n") if j.strip()] 
-            articles_standartized = []
-
-
-            #Loop through all files
-            for line_number, line in enumerate(json_lines, start=1):
-                try:
-                    article = json.loads(line)
-
-                except json.JSONDecodeError as err:
-                    raise ValueError(f"Invalid JSON line in {line_number} : {err}")
-
-                article["mediatype"] = mediatype
-                articles_standartized.append(json.dumps(article, ensure_ascii=False))
-            
-            #Save
-            file_path.write_text("\n".join(articles_standartized) + "\n", encoding="utf-8")
