@@ -1,10 +1,5 @@
----
-title: ReadMe Scrapers - YOU-DARE
-
----
-
 # YOU-DARE Scrapers
-[toc]
+
 ## Project description
 As a part of the EU Horizon project YOU-DARE, CALDISS has contributed with the development of web scrapers for a number of sources and actors across various platforms. These scrapers have been written in Python and can generally be put into one of three categories depending on their targeted platform:
 - [Scrapers for websites](#Scrapers-for-websites)
