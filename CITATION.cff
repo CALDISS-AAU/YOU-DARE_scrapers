@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Christensen"
+  given-names: "Josefine Marianne"
+- family-names: "Appel"
+  given-names: "Matias Kokholm"
+  orcid: "https://orcid.org/0009-0004-7380-2191"
+- family-names: "Szanto"
+  given-names: "Diana Laura"
+- family-names: "Kjelmann"
+  given-names: "Kristian Gade"
+  orcid: "https://orcid.org/0000-0001-7994-735X"
+
+title: "YOU-DARE_scrapers"
+date-released: 2026-02-17
+url: "https://github.com/CALDISS-AAU/YOU-DARE_scrapers"
