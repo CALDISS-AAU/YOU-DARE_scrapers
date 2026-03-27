@@ -2,7 +2,7 @@
 # External imports #
 import scrapy
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 import time
 import random
 # Internal imports #
@@ -17,7 +17,7 @@ from ...functions.scraper_functions.general_functions import General_Functions  
     OR
         cd ./path/to/YOU-DARE_scrapers_folder
         mkdir -p ./data/Sweden/flashback_SPIDER_json # If the folder does not yet exist
-        nohup scrapy crawl flashback_SPIDER_json -a max_pages_posts=1 > ./data/Sweden/flashback_SPIDER/flashback_SPIDER_json_$(date +%F).log
+        nohup scrapy crawl flashback_SPIDER_json -a max_pages_posts=1 > ./data/Sweden/flashback_SPIDER_json/flashback_SPIDER_json_$(date +%F).log
 '''
 
 ### CREATING THE SPIDER ###
@@ -31,6 +31,44 @@ class StaticSpider(scrapy.Spider): # Can be changed but it's not necessary - if 
         # 'https://www.flashback.org/f34-nationalsocialism-fascism-och-nationalism-51006'
     ] # The url where the content to be scraped is found - can be multiple urls IF THE CSS/XPATH IS IDENTICAL!
 
+    custom_settings = {
+        # Keep it gentle on Flashback, even if global settings differ
+        "DOWNLOAD_DELAY": 4,
+        "RANDOMIZE_DOWNLOAD_DELAY": True,
+
+        # Concurrency tuned specifically for one forum domain
+        "CONCURRENT_REQUESTS": 2,
+        "CONCURRENT_REQUESTS_PER_DOMAIN": 1,
+
+        # AutoThrottle: be more conservative (back off harder under pressure)
+        "AUTOTHROTTLE_ENABLED": True,
+        "AUTOTHROTTLE_START_DELAY": 4,
+        "AUTOTHROTTLE_MAX_DELAY": 120,
+        "AUTOTHROTTLE_TARGET_CONCURRENCY": 0.5,
+
+        # Retry: be more persistent on 429 and transient failures
+        "RETRY_ENABLED": True,
+        "RETRY_TIMES": 10,
+        "RETRY_HTTP_CODES": [429, 500, 502, 503, 504, 522, 524, 408],
+
+        # Give slow pages time; forums can be spiky
+        "DOWNLOAD_TIMEOUT": 60,
+
+        # Use browser-like headers (helps reduce blocks / weird responses)
+        "DEFAULT_REQUEST_HEADERS": {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "sv-SE,sv;q=0.9,en;q=0.8",
+            "User-Agent": (
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/122.0 Safari/537.36"
+            ),
+            "Upgrade-Insecure-Requests": "1",
+        },
+
+        # Optional: if Flashback sometimes varies content without cookies
+        # "COOKIES_ENABLED": True,
+    }
+    
      ## HTML directions ##
     ''' These can be both CSS and XPath or a mix as long as it's matched within the response functions within the different parse functions.
         E.g. 'some_css' must use response.css('some_CSS') and 'some_xpath' must use response.xpath('some_XPATH')
@@ -90,19 +128,46 @@ class StaticSpider(scrapy.Spider): # Can be changed but it's not necessary - if 
     def open_spider(self, spider):
         """Executes setup actions when the spider is opened."""
         self.logger.info("open_spider() is running!")
-        self.seen_links = Static_Scrapy.load_existing_links(self.save_file, self.logger, column='post_link') # See doc string
+        self.seen_links = Static_Scrapy.load_existing_links(self.save_file, column='post_link') # See doc string
 
     def generate_YAML(self, comment_author, comment_date, comment_tag, comment_text, post=False):
         label = 'POST' if post else 'COMMENT'
         return f'\n\n\n---\n{label}: \nAuthor: {comment_author}\nDate: {comment_date}\nTag: {comment_tag}\n---\n{comment_text}'
 
-    def generate_dict(self, comment_author, comment_date, comment_tag, comment_text, post=False):
-        {'label': 'POST' if post else 'COMMENT',
-         'author': comment_author,
-         'date': comment_date,
-         'tag': comment_tag,
-         'text': comment_text
-        }
+    def generate_dict(self, comment_author, comment_date, comment_tag, comment_text, post=False, index=None):
+        return {
+            'label': 'POST' if post else f'COMMENT_{index}',
+            'author': comment_author,
+            'date': comment_date,
+            'tag': comment_tag,
+            'text': comment_text
+            }
+
+    def normalize_swedish_date(self, raw_date):
+        """
+        Converts 'Idag' and 'Igår' to actual YYYY-MM-DD format
+        based on current scrape date.
+        """
+        if not raw_date:
+            return raw_date
+
+        raw_date = raw_date.strip()
+
+        today = datetime.now()
+        
+        if raw_date.lower().startswith("idag"):
+            # Extract time part if present
+            time_part = raw_date[4:].strip()
+            date_part = today.strftime("%Y-%m-%d")
+            return f"{date_part} {time_part}".strip()
+
+        if raw_date.lower().startswith("igår"):
+            time_part = raw_date[4:].strip()
+            yesterday = today - timedelta(days=1)
+            date_part = yesterday.strftime("%Y-%m-%d")
+            return f"{date_part} {time_part}".strip()
+
+        return raw_date
 
     ### THE ACTUAL SPIDER FUNCTIONALITY ###
     async def start(self):
@@ -115,12 +180,12 @@ class StaticSpider(scrapy.Spider): # Can be changed but it's not necessary - if 
 
     def parse_posts(self, response): # Can be renamed. IF IT IS REMEBER TO REDIRECT THE CALLBACK IN START_REQUESTS!
         current_page_post = response.meta['current_page'] # Saves 'current_page_post' from start_request
-        replies = []
 
         # Finds and follows post links 
         post_links = response.xpath(self.links_to_follow_posts_XPATH).getall() # Gets all article links 
         for partial_link in post_links:
             link = response.urljoin(partial_link)
+            link = re.sub(r'(/t\d+)s$', r'\1', link)
             if link in self.seen_links: # Only scrapes information from the front page for posts that has not yet been scraped - can be removed if only the link is found from the front page
                 self.logger.info(f"Skipping duplicate post: {link}")
                 continue
@@ -130,7 +195,13 @@ class StaticSpider(scrapy.Spider): # Can be changed but it's not necessary - if 
                 callback=self.parse_comments, # Calls parse_comments on each link
                 meta={
                     'post_link': link, # Sends the link to parse_comment so that it can be stored as an item. To also send e.g. the 'publication_date' simply add it here!
-                    'current_page': 1
+                    'current_page': 1,
+                    'replies': [],
+                    'combined_text': '',
+                    'combined_links_in_text': [],
+                    'publication_date_clean': None,
+                    'post_author_clean': None,
+                    'comment_counter': 0
                 }
             )
 
@@ -141,14 +212,13 @@ class StaticSpider(scrapy.Spider): # Can be changed but it's not necessary - if 
             yield next_page_post_url
 
     def parse_comments(self, response): # Can be renamed. IF IT IS REMEBER TO REDIRECT THE CALLBACK IN PARSE_FRONT!
-        items = self.items # Makes the items from items.py accessable within this function
-
         current_page_comment = response.meta['current_page']
-        
+        replies = response.meta.get('replies', [])
         publication_date_clean = response.meta.get('publication_date_clean')
         post_author_clean = response.meta.get('post_author_clean')
-        combined_text = response.meta.get('combined_text', '') # Carries forward accumulated text if we’re on page > 1
+        combined_text = response.meta.get('combined_text', '')
         combined_links_in_text = response.meta.get('combined_links_in_text', [])
+        comment_counter = response.meta.get('comment_counter', 0)
 
         ### EXTRACT COMMENTS FROM THIS PAGE ###
         comments = response.css(self.comments_CSS)
@@ -164,6 +234,7 @@ class StaticSpider(scrapy.Spider): # Can be changed but it's not necessary - if 
             comment_publication_date = comment.xpath(self.comment_publication_date_XPATH).getall()
             if comment_publication_date:
                 comment_publication_date_clean = General_Functions.join_and_clean(comment_publication_date)
+                comment_publication_date_clean = self.normalize_swedish_date(comment_publication_date_clean)
             else:
                 comment_publication_date_clean = comment_publication_date
 
@@ -225,9 +296,14 @@ class StaticSpider(scrapy.Spider): # Can be changed but it's not necessary - if 
                 if not publication_date_clean:
                     publication_date_clean = comment_publication_date_clean
             else:
-                text_dict = self.generate_dict(comment_author_clean, comment_publication_date_clean, comment_tag, comment_text_clean)
+                comment_counter += 1
+                text_dict = self.generate_dict(comment_author_clean, comment_publication_date_clean, comment_tag, comment_text_clean, index=comment_counter)
 
-            combined_text = combined_text + comment_text_clean # Append this comment to accumulated text
+            if combined_text:
+                combined_text = f"{combined_text}\n---\n\n{comment_text_clean}"
+            else:
+                combined_text = comment_text_clean
+
             replies.append(text_dict)
 
             # Extract 'comment_links_in_text' 
@@ -249,6 +325,7 @@ class StaticSpider(scrapy.Spider): # Can be changed but it's not necessary - if 
                     'replies': replies,
                     'combined_links_in_text': combined_links_in_text,
                     'current_page': current_page_comment + 1,
+                    'comment_counter': comment_counter,
                 }
             )
             return # Don’t yield items yet, wait until the last page is reached

@@ -90,7 +90,7 @@ class StaticSpider(scrapy.Spider): # Can be changed but it's not necessary - if 
     def open_spider(self, spider):
         """Executes setup actions when the spider is opened."""
         self.logger.info("open_spider() is running!")
-        self.seen_links = Static_Scrapy.load_existing_links(self.save_file, self.logger, column='post_link') # See doc string
+        self.seen_links = Static_Scrapy.load_existing_links(self.save_file, column='post_link') # See doc string
 
     def generate_YAML(self, comment_author, comment_date, comment_tag, comment_text, post=False):
         label = 'POST' if post else 'COMMENT'
@@ -112,6 +112,7 @@ class StaticSpider(scrapy.Spider): # Can be changed but it's not necessary - if 
         post_links = response.xpath(self.links_to_follow_posts_XPATH).getall() # Gets all article links 
         for partial_link in post_links:
             link = response.urljoin(partial_link)
+            link = re.sub(r'(/t\d+)s$', r'\1', link)
             if link in self.seen_links: # Only scrapes information from the front page for posts that has not yet been scraped - can be removed if only the link is found from the front page
                 self.logger.info(f"Skipping duplicate post: {link}")
                 continue
@@ -132,8 +133,6 @@ class StaticSpider(scrapy.Spider): # Can be changed but it's not necessary - if 
             yield next_page_post_url
 
     def parse_comments(self, response): # Can be renamed. IF IT IS REMEBER TO REDIRECT THE CALLBACK IN PARSE_FRONT!
-        items = self.items # Makes the items from items.py accessable within this function
-
         current_page_comment = response.meta['current_page']
         
         publication_date_clean = response.meta.get('publication_date_clean')
