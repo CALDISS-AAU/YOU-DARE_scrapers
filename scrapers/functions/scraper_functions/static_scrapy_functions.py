@@ -35,7 +35,7 @@ class Static_Scrapy:
             return uri_filled
 
     @staticmethod
-    def load_existing_links(save_path):
+    def load_existing_links(save_path, column="article_link"):
         """
         Loads previously scraped article links from a JSON Lines (.jl) file.
 
@@ -46,6 +46,7 @@ class Static_Scrapy:
 
         Args:
             save_path (str): Path to the JSON Lines file containing scraped items.
+            column (str): The column containing the links of scraped items.
 
         Returns:
             set: A set of unique article links already present in the file.
@@ -56,8 +57,8 @@ class Static_Scrapy:
                 for line in f:
                     try:
                         item = json.loads(line.strip())
-                        if "article_link" in item:
-                            existing_data.add(item["article_link"])
+                        if column in item:
+                            existing_data.add(item[column])
                     except json.JSONDecodeError:
                         continue
         return existing_data

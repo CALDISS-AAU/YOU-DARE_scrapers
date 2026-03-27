@@ -28,4 +28,5 @@ class ScrapersItem(scrapy.Item):
     post_author = scrapy.Field()
     post_categories = scrapy.Field()
     thread_text = scrapy.Field()
+    replies = scrapy.Field()
     pass
