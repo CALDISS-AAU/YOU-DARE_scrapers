@@ -55,7 +55,7 @@ class DynamicSpider(scrapy.Spider): # Can be changed but it's not necessary - if
     ''' CSS or XPath queries for relevant information found on the individual article pages.
     '''
     article_title_CSS = 'h1.entry-title::text'
-    publication_date_CSS = 'time.entry-date.date.updated[itemprop="datePublished"]::attr(datetime)'
+    publication_date_CSS = '.wrapper-inner .the_time::text'
     author_CSS = 'div.wrapper-inner li.the_author'
     article_categories_CSS = '.category.span.tax-title::text'
     article_text_CSS = 'div.col-sm-11.col-sm-push-1.content h2 *::text, div.col-sm-11.col-sm-push-1.content p *::text'
@@ -150,7 +150,8 @@ class DynamicSpider(scrapy.Spider): # Can be changed but it's not necessary - if
         else:
             article_title_clean = article_title
         # Extract 'publication_date' 
-        publication_date = response.css(self.publication_date_CSS).get()
+        publication_date_raw = response.css(self.publication_date_CSS).get()
+        publication_date = publication_date_raw.replace("Udgivet den ", "")
         # Extract 'author' 
         raw_author = response.css(self.author_CSS)
         if raw_author.css('::text').getall(): # Only cleans existing articles
