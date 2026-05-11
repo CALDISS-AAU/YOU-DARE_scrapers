@@ -7,7 +7,7 @@ from scrapers.functions.transcriber_data_functions import Transcriber_data_Funct
 ''' 
 
 transcriber_prep = Transcriber_data_Functions()
-data_path = './data/Romania/cezar_lonascu_YT'
+data_path = './data/Country/source_YT'
 
 transcriber_prep.clean_transcribed_audio_files_setup(
     base_path=data_path

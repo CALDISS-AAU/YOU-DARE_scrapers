@@ -4,7 +4,7 @@
 pip install --upgrade pip # opgraderer pip
 
 # packages
-pip install -r requirements.txt
+pip install -r ./path/to/YOU-DARE_scrapers-folder/requirements.txt
 
 # playwright stuff
 playwright install
